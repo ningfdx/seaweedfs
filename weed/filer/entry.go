@@ -1,6 +1,7 @@
 package filer
 
 import (
+	"github.com/chrislusf/seaweedfs/weed/glog"
 	"os"
 	"time"
 
@@ -48,8 +49,50 @@ type Entry struct {
 	Quota           int64
 }
 
+const (
+	XATTR_PREFIX = "xattr-"
+	Quota_Key    = "quota"
+	Size_key     = "size"
+)
+
 func (entry *Entry) Size() uint64 {
 	return maxUint64(maxUint64(TotalSize(entry.Chunks), entry.FileSize), uint64(len(entry.Content)))
+}
+
+func (entry *Entry) GetXAttrSize() uint64 {
+	val := entry.Extended[XATTR_PREFIX+Size_key]
+	if len(val) == 0 {
+		return 0
+	}
+	b, err := util.ParseBytes(string(val))
+	if err != nil {
+		glog.Errorf("entry xattr %s  base64/bytes decode failed: %s", string(val), err.Error())
+		return 0
+	}
+	return b
+}
+
+func (entry *Entry) SetXAttrSize(b uint64) {
+	if b < 0 {
+		b = 0
+	}
+	if entry.Extended == nil {
+		entry.Extended = make(map[string][]byte)
+	}
+	entry.Extended[XATTR_PREFIX+Size_key] = []byte(util.BytesToHumanReadable(b))
+}
+
+func (entry *Entry) GetXAttrQuota() uint64 {
+	val := entry.Extended[XATTR_PREFIX+Quota_Key]
+	if len(val) == 0 {
+		return 0
+	}
+	b, err := util.ParseBytes(string(val))
+	if err != nil {
+		glog.Errorf("entry xattr %s  base64/bytes decode failed: %s", string(val), err.Error())
+		return 0
+	}
+	return b
 }
 
 func (entry *Entry) Timestamp() time.Time {

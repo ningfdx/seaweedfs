@@ -48,6 +48,7 @@ type Filer struct {
 	FilerConf           *FilerConf
 	RemoteStorage       *FilerRemoteStorage
 	UniqueFileId        uint32
+	eventCh             chan<- *event
 }
 
 func NewFiler(masters map[string]pb.ServerAddress, grpcDialOption grpc.DialOption, filerHost pb.ServerAddress,
@@ -65,6 +66,7 @@ func NewFiler(masters map[string]pb.ServerAddress, grpcDialOption grpc.DialOptio
 	f.metaLogReplication = replication
 
 	go f.loopProcessingDeletion()
+	f.eventCh = f.eventHandler()
 
 	return f
 }

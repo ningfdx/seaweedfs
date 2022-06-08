@@ -17,11 +17,14 @@ import (
 )
 
 func (f *Filer) NotifyUpdateEvent(ctx context.Context, oldEntry, newEntry *Entry, deleteChunks, isFromOtherCluster bool, signatures []int32) {
+	var directory string
 	var fullpath string
 	if oldEntry != nil {
 		fullpath = string(oldEntry.FullPath)
+		directory, _ = oldEntry.FullPath.DirAndName()
 	} else if newEntry != nil {
 		fullpath = string(newEntry.FullPath)
+		directory, _ = newEntry.FullPath.DirAndName()
 	} else {
 		return
 	}
@@ -52,6 +55,12 @@ func (f *Filer) NotifyUpdateEvent(ctx context.Context, oldEntry, newEntry *Entry
 		NewParentPath:      newParentPath,
 		IsFromOtherCluster: isFromOtherCluster,
 		Signatures:         signatures,
+	}
+
+	f.eventCh <- &event{
+		fullpath,
+		directory,
+		eventNotification,
 	}
 
 	if notification.Queue != nil {
