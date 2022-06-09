@@ -23,10 +23,11 @@ func (wfs *WFS) StatFs(cancel <-chan struct{}, in *fuse.InHeader, out *fuse.Stat
 
 	if in.NodeId != 1 {
 		p, _, _, status := wfs.maybeReadEntry(in.NodeId)
-		if status == fuse.OK && p.IsRootNode() {
-			glog.V(4).Infof("reading fs stats of %s", p)
+		exist, rootDir := p.GetRootDir()
+		if status == fuse.OK && exist {
+			glog.V(4).Infof("reading fs stats of %s", rootDir)
 
-			cachedRootEntry, cacheErr := wfs.metaCache.FindEntry(context.Background(), p)
+			cachedRootEntry, cacheErr := wfs.metaCache.FindEntry(context.Background(), rootDir)
 			if cacheErr == filer_pb.ErrNotFound {
 				return fuse.OK
 			}
@@ -39,6 +40,9 @@ func (wfs *WFS) StatFs(cancel <-chan struct{}, in *fuse.InHeader, out *fuse.Stat
 			// 超过上限了, 显示上限
 			if usedDiskSize > totalDiskSize {
 				totalDiskSize = usedDiskSize
+			}
+			if actualFileCount > totalFileCount {
+				totalFileCount = actualFileCount
 			}
 
 			// Compute the total number of available blocks

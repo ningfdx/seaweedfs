@@ -97,7 +97,8 @@ func NewSeaweedFileSystem(option *Option) *WFS {
 		func(path util.FullPath) {
 			wfs.inodeToPath.MarkChildrenCached(path)
 		}, func(path util.FullPath) bool {
-			return wfs.inodeToPath.IsChildrenCached(path)
+			// 需要缓存根目录，因为根目录的更新再quota逻辑中也同样重要
+			return wfs.inodeToPath.IsChildrenCached(path) || path == "/"
 		}, func(filePath util.FullPath, entry *filer_pb.Entry) {
 		})
 	grace.OnInterrupt(func() {
