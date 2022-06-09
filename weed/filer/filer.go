@@ -6,9 +6,11 @@ import (
 	"github.com/chrislusf/seaweedfs/weed/cluster"
 	"github.com/chrislusf/seaweedfs/weed/pb"
 	"github.com/chrislusf/seaweedfs/weed/pb/master_pb"
+	"github.com/pkg/errors"
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"google.golang.org/grpc"
@@ -47,6 +49,8 @@ type Filer struct {
 	RemoteStorage       *FilerRemoteStorage
 	UniqueFileId        uint32
 	eventCh             chan<- *event
+	cacheRootMutex      sync.RWMutex
+	cacheRootNodeEntry  map[util.FullPath]*Entry
 }
 
 func NewFiler(masters map[string]pb.ServerAddress, grpcDialOption grpc.DialOption, filerHost pb.ServerAddress,
@@ -58,6 +62,7 @@ func NewFiler(masters map[string]pb.ServerAddress, grpcDialOption grpc.DialOptio
 		FilerConf:           NewFilerConf(),
 		RemoteStorage:       NewFilerRemoteStorage(),
 		UniqueFileId:        uint32(util.RandomInt32()),
+		cacheRootNodeEntry:  make(map[util.FullPath]*Entry),
 	}
 	f.LocalMetaLogBuffer = log_buffer.NewLogBuffer("local", LogFlushInterval, f.logFlushFunc, notifyFn)
 	f.metaLogCollection = collection
@@ -181,6 +186,11 @@ func (f *Filer) CreateEntry(ctx context.Context, entry *Entry, o_excl bool, isFr
 		return nil
 	}
 
+	err := f.checkInodeQuota(ctx, entry)
+	if err != nil {
+		return err
+	}
+
 	oldEntry, _ := f.FindEntry(ctx, entry.FullPath)
 
 	/*
@@ -222,6 +232,48 @@ func (f *Filer) CreateEntry(ctx context.Context, entry *Entry, o_excl bool, isFr
 	f.deleteChunksIfNotNew(oldEntry, entry)
 
 	glog.V(4).Infof("CreateEntry %s: created", entry.FullPath)
+
+	return nil
+}
+
+func (f *Filer) getRootNodeQuotaCache(p util.FullPath) (entry *Entry) {
+	f.cacheRootMutex.RLock()
+	defer f.cacheRootMutex.RUnlock()
+	return f.cacheRootNodeEntry[p]
+}
+
+func (f *Filer) updateRootNodeQuotaCache(entry *Entry) {
+	glog.V(4).Infof("cache update of %s", entry.FullPath)
+	f.cacheRootMutex.Lock()
+	defer f.cacheRootMutex.Unlock()
+	f.cacheRootNodeEntry[entry.FullPath] = entry
+}
+
+func (f *Filer) deleteRootNodeQuotaCache(entry *Entry) {
+	glog.V(4).Infof("cache delete of %s", entry.FullPath)
+	f.cacheRootMutex.Lock()
+	defer f.cacheRootMutex.Unlock()
+	delete(f.cacheRootNodeEntry, entry.FullPath)
+}
+
+func (f *Filer) checkInodeQuota(ctx context.Context, entry *Entry) error {
+	exist, rootNodePath := entry.FullPath.GetRootDir()
+	if !exist {
+		return nil
+	}
+
+	rootEntry := f.getRootNodeQuotaCache(rootNodePath)
+	if rootEntry == nil {
+		var err error
+		rootEntry, err = f.FindEntry(ctx, rootNodePath)
+		if err != nil {
+			return errors.Wrap(err, QuotaErrorPrefix+" parent node not found")
+		}
+	}
+	if rootEntry.GetXAttrInodeQuota() < 1+rootEntry.GetXAttrInodeCount() {
+		glog.V(4).Infof("inode info of %s: %d/%d", entry.FullPath, rootEntry.GetXAttrInodeCount(), rootEntry.GetXAttrInodeQuota())
+		return fmt.Errorf(QuotaErrorPrefix+" insert entry %s : inode count should be less than %d, now is %d", entry.FullPath, rootEntry.GetXAttrInodeQuota(), rootEntry.GetXAttrInodeCount()+1)
+	}
 
 	return nil
 }
@@ -283,6 +335,16 @@ func (f *Filer) ensureParentDirecotryEntry(ctx context.Context, entry *Entry, di
 }
 
 func (f *Filer) UpdateEntry(ctx context.Context, oldEntry, entry *Entry) (err error) {
+	if entry != nil {
+		if entry.FullPath.IsRootNode() {
+			f.updateRootNodeQuotaCache(entry)
+		}
+	} else if oldEntry != nil {
+		if oldEntry.FullPath.IsRootNode() {
+			f.deleteRootNodeQuotaCache(oldEntry)
+		}
+	}
+
 	if oldEntry != nil {
 		entry.Attr.Crtime = oldEntry.Attr.Crtime
 		if oldEntry.IsDirectory() && !entry.IsDirectory() {
@@ -315,12 +377,26 @@ func (f *Filer) FindEntry(ctx context.Context, p util.FullPath) (entry *Entry, e
 	if string(p) == "/" {
 		return Root, nil
 	}
+
+	isRootNode := p.IsRootNode()
+	if isRootNode {
+		if entry = f.getRootNodeQuotaCache(p); entry != nil {
+			glog.V(4).Infof("cache point of %s", p)
+			return
+		}
+	}
+
 	entry, err = f.Store.FindEntry(ctx, p)
 	if entry != nil && entry.TtlSec > 0 {
 		if entry.Crtime.Add(time.Duration(entry.TtlSec) * time.Second).Before(time.Now()) {
 			f.Store.DeleteOneEntry(ctx, entry)
 			return nil, filer_pb.ErrNotFound
 		}
+	}
+
+	if entry != nil && isRootNode {
+		glog.V(4).Infof("cache add of %s", p)
+		f.updateRootNodeQuotaCache(entry)
 	}
 	return
 

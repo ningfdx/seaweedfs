@@ -33,6 +33,7 @@ func (wfs *WFS) Mkdir(cancel <-chan struct{}, in *fuse.MkdirIn, name string, out
 		Name:        name,
 		IsDirectory: true,
 		Attributes: &filer_pb.FuseAttributes{
+			FileSize: 4 * 1024,
 			Mtime:    time.Now().Unix(),
 			Crtime:   time.Now().Unix(),
 			FileMode: uint32(os.ModeDir) | in.Mode&^uint32(wfs.option.Umask),
@@ -75,6 +76,9 @@ func (wfs *WFS) Mkdir(cancel <-chan struct{}, in *fuse.MkdirIn, name string, out
 	glog.V(3).Infof("mkdir %s: %v", entryFullPath, err)
 
 	if err != nil {
+		if strings.Contains(err.Error(), "QuotaError") {
+			return fuse.Status(syscall.EDQUOT)
+		}
 		return fuse.EIO
 	}
 

@@ -1,8 +1,10 @@
 package filer
 
 import (
+	"fmt"
 	"github.com/chrislusf/seaweedfs/weed/glog"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
@@ -47,9 +49,13 @@ type Entry struct {
 }
 
 const (
-	XATTR_PREFIX = "xattr-"
-	Quota_Key    = "quota"
-	Size_key     = "size"
+	XATTR_PREFIX    = "xattr-"
+	Size_Quota_Key  = "quota-size"
+	Size_Key        = "size"
+	Inode_Quota_Key = "quota-inode"
+	Inode_Key       = "inode"
+
+	QuotaErrorPrefix = "QuotaError:"
 )
 
 func (entry *Entry) Size() uint64 {
@@ -57,7 +63,7 @@ func (entry *Entry) Size() uint64 {
 }
 
 func (entry *Entry) GetXAttrSize() uint64 {
-	val := entry.Extended[XATTR_PREFIX+Size_key]
+	val := entry.Extended[XATTR_PREFIX+Size_Key]
 	if len(val) == 0 {
 		return 0
 	}
@@ -69,18 +75,37 @@ func (entry *Entry) GetXAttrSize() uint64 {
 	return b
 }
 
-func (entry *Entry) SetXAttrSize(b uint64) {
+func (entry *Entry) SetXAttrSize(b int64) {
 	if b < 0 {
 		b = 0
 	}
 	if entry.Extended == nil {
 		entry.Extended = make(map[string][]byte)
 	}
-	entry.Extended[XATTR_PREFIX+Size_key] = []byte(util.BytesToHumanReadable(b))
+	entry.Extended[XATTR_PREFIX+Size_Key] = []byte(util.BytesToHumanReadable(uint64(b)))
 }
 
-func (entry *Entry) GetXAttrQuota() uint64 {
-	val := entry.Extended[XATTR_PREFIX+Quota_Key]
+func (entry *Entry) GetXAttrInodeCount() uint64 {
+	val := entry.Extended[XATTR_PREFIX+Inode_Key]
+	if len(val) == 0 {
+		return 0
+	}
+	b, _ := strconv.Atoi(string(val))
+	return uint64(b)
+}
+
+func (entry *Entry) SetXAttrInodeCount(b int64) {
+	if b < 0 {
+		b = 0
+	}
+	if entry.Extended == nil {
+		entry.Extended = make(map[string][]byte)
+	}
+	entry.Extended[XATTR_PREFIX+Inode_Key] = []byte(fmt.Sprintf("%d", b))
+}
+
+func (entry *Entry) GetXAttrSizeQuota() uint64 {
+	val := entry.Extended[XATTR_PREFIX+Size_Quota_Key]
 	if len(val) == 0 {
 		return 0
 	}
@@ -90,6 +115,15 @@ func (entry *Entry) GetXAttrQuota() uint64 {
 		return 0
 	}
 	return b
+}
+
+func (entry *Entry) GetXAttrInodeQuota() uint64 {
+	val := entry.Extended[XATTR_PREFIX+Inode_Quota_Key]
+	if len(val) == 0 {
+		return 0
+	}
+	b, _ := strconv.Atoi(string(val))
+	return uint64(b)
 }
 
 func (entry *Entry) Timestamp() time.Time {

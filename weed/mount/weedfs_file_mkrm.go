@@ -7,6 +7,7 @@ import (
 	"github.com/chrislusf/seaweedfs/weed/glog"
 	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
 	"github.com/hanwen/go-fuse/v2/fuse"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -97,6 +98,9 @@ func (wfs *WFS) Mknod(cancel <-chan struct{}, in *fuse.MknodIn, name string, out
 	glog.V(3).Infof("mknod %s: %v", entryFullPath, err)
 
 	if err != nil {
+		if strings.Contains(err.Error(), "QuotaError") {
+			return fuse.Status(syscall.EDQUOT)
+		}
 		return fuse.EIO
 	}
 

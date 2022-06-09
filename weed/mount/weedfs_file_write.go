@@ -1,6 +1,10 @@
 package mount
 
 import (
+	"context"
+	"github.com/chrislusf/seaweedfs/weed/filer"
+	"github.com/chrislusf/seaweedfs/weed/glog"
+	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"net/http"
 	"syscall"
@@ -41,6 +45,24 @@ func (wfs *WFS) Write(cancel <-chan struct{}, in *fuse.WriteIn, data []byte) (wr
 	fh := wfs.GetHandle(FileHandleId(in.Fh))
 	if fh == nil {
 		return 0, fuse.ENOENT
+	}
+
+	exist, rootDir := fh.FullPath().GetRootDir()
+	if exist {
+		cachedRootEntry, cacheErr := wfs.metaCache.FindEntry(context.Background(), rootDir)
+		if cacheErr == filer_pb.ErrNotFound {
+			return 0, fuse.ENOENT
+		}
+		quotaSize := cachedRootEntry.GetXAttrSizeQuota()
+		usedSize := cachedRootEntry.GetXAttrSize()
+		glog.V(4).Infof("%v Write, quota %s: %s/%s", fh.FullPath(), rootDir, cachedRootEntry.Extended[XATTR_PREFIX+filer.Size_Key], cachedRootEntry.Extended[XATTR_PREFIX+filer.Size_Quota_Key])
+		glog.V(4).Infof("%v Write, quota %s: %d/%d", fh.FullPath(), rootDir, usedSize, quotaSize)
+		if quotaSize < uint64(len(data))+usedSize {
+			return 0, fuse.Status(syscall.EDQUOT)
+		}
+
+		cachedRootEntry.SetXAttrSize(int64(usedSize + uint64(len(data))))
+		wfs.metaCache.UpdateEntry(context.Background(), cachedRootEntry)
 	}
 
 	fh.dirtyPages.writerPattern.MonitorWriteAt(int64(in.Offset), int(in.Size))

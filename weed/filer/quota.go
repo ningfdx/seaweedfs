@@ -6,12 +6,11 @@ import (
 	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
 	"github.com/chrislusf/seaweedfs/weed/util"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
 type event struct {
-	fullPath          string
+	fullPath          util.FullPath
 	directory         string
 	eventNotification *filer_pb.EventNotification
 }
@@ -19,25 +18,31 @@ type event struct {
 func (f *Filer) eventHandler() chan<- *event {
 	newCh := make(chan *event, 3000)
 
-	handleCh := make(chan map[string]int64, 5)
+	handleCh := make(chan map[util.FullPath]rootNodeAttr, 5)
 	go f.runEventHandler(newCh, handleCh)
 	go f.handleQuotaPersist(handleCh)
 
 	return newCh
 }
 
-func (f *Filer) runEventHandler(ch <-chan *event, persistCh chan map[string]int64) {
-	// 只统计 collection 根目录下的directory节点，避免递归调用，锁竞争导致效率低下
-	rootNodeMapping := make(map[string]int64)
-	var sizeChanged int64
+type rootNodeAttr struct {
+	sizeChanged       int64
+	inodeCountChanged int64
+}
 
-	ticker := time.NewTicker(time.Second * 15)
+func (f *Filer) runEventHandler(ch <-chan *event, persistCh chan map[util.FullPath]rootNodeAttr) {
+	// 只统计 collection 根目录下的directory节点，避免递归调用，锁竞争导致效率低下
+	rootNodeMapping := make(map[util.FullPath]rootNodeAttr)
+	var sizeChanged int64
+	var inodeCountChanged int64
+
+	ticker := time.NewTicker(time.Second * 3)
 
 	for {
 		select {
 		case <-ticker.C:
 			copyTmp := rootNodeMapping
-			rootNodeMapping = make(map[string]int64)
+			rootNodeMapping = make(map[util.FullPath]rootNodeAttr)
 			persistCh <- copyTmp
 		case msg, ok := <-ch:
 			if !ok {
@@ -46,42 +51,61 @@ func (f *Filer) runEventHandler(ch <-chan *event, persistCh chan map[string]int6
 			tp := typeParse(msg)
 			glog.V(4).Infof("event handler got %s type of %s", tp, msg.fullPath)
 			switch tp {
+			case createOp:
+				inodeCountChanged += 1
+				sizeChanged = int64(msg.eventNotification.NewEntry.Attributes.GetFileSize())
 			case updateOp:
 				sizeChanged = int64(msg.eventNotification.NewEntry.Attributes.GetFileSize()) - int64(msg.eventNotification.OldEntry.Attributes.GetFileSize())
 			case deleteOp:
+				inodeCountChanged -= 1
 				sizeChanged = -int64(msg.eventNotification.OldEntry.Attributes.GetFileSize())
 			default:
 				sizeChanged = 0
+				inodeCountChanged = 0
 			}
-			if sizeChanged != 0 {
-				splits := strings.Split(strings.TrimLeft(msg.fullPath, string(filepath.Separator)), string(filepath.Separator))
-				if len(splits) == 0 {
+			if sizeChanged != 0 || inodeCountChanged != 0 {
+				exist, rootNode := msg.fullPath.GetRootDir()
+				if !exist {
 					continue
 				}
-				rootNode := string(filepath.Separator) + splits[0]
-				rootNodeMapping[rootNode] = rootNodeMapping[rootNode] + sizeChanged
-				glog.V(4).Infof("%s type of %s, rootNode: %s, splits: %v, %d", tp, msg.fullPath, rootNode, splits, sizeChanged)
+				if rootNode == util.FullPath(filepath.Separator) {
+					continue
+				}
+				rootNodeMapping[rootNode] = rootNodeAttr{
+					sizeChanged:       rootNodeMapping[rootNode].sizeChanged + sizeChanged,
+					inodeCountChanged: rootNodeMapping[rootNode].inodeCountChanged + inodeCountChanged,
+				}
+				glog.V(4).Infof("%s type of %s, rootNode: %s, %d", tp, msg.fullPath, rootNode, sizeChanged)
 				sizeChanged = 0
+				inodeCountChanged = 0
 			}
 		}
 	}
 }
 
-func (f *Filer) handleQuotaPersist(persistCh chan map[string]int64) {
+func (f *Filer) handleQuotaPersist(persistCh chan map[util.FullPath]rootNodeAttr) {
 	for changes := range persistCh {
-		for node, sizeChanged := range changes {
-			if sizeChanged == 0 {
+		for node, val := range changes {
+			if node == util.FullPath(filepath.Separator) {
 				continue
 			}
-			entry, err := f.FindEntry(context.Background(), util.FullPath(node))
+
+			if val.sizeChanged == 0 && val.inodeCountChanged == 0 {
+				continue
+			}
+
+			entry, err := f.FindEntry(context.Background(), node)
 			if err != nil {
 				glog.Errorf("find entry of %s failed: %s", node, err.Error())
 				continue
 			}
-			glog.V(4).Infof("fin entry of %s, used_size: %d", node, entry.GetXAttrSize())
+			glog.V(4).Infof("find entry of %s, used_size: %d", node, entry.GetXAttrSize())
 
-			usedSize := uint64(int64(entry.GetXAttrSize()) + sizeChanged)
+			usedSize := int64(entry.GetXAttrSize()) + val.sizeChanged
 			entry.SetXAttrSize(usedSize)
+
+			inodeCount := int64(entry.GetXAttrInodeCount()) + val.inodeCountChanged
+			entry.SetXAttrInodeCount(inodeCount)
 
 			err = f.UpdateEntry(context.Background(), nil, entry)
 			if err != nil {
@@ -90,7 +114,7 @@ func (f *Filer) handleQuotaPersist(persistCh chan map[string]int64) {
 			}
 			f.NotifyUpdateEvent(context.Background(), entry, entry, false, false, []int32{util.RandomInt32()})
 
-			glog.V(4).Infof("handleQuotaPersist of %s changed: %d, used_size: %d", node, sizeChanged, usedSize)
+			glog.V(4).Infof("handleQuotaPersist of %s changed: size %d, inode %d, used_size: %d", node, val.sizeChanged, val.inodeCountChanged, usedSize)
 		}
 	}
 }

@@ -29,6 +29,32 @@ func (fp FullPath) Name() string {
 	return name
 }
 
+func (fp FullPath) IsRootNode() bool {
+	splits := strings.Split(strings.TrimLeft(string(fp), string(filepath.Separator)), string(filepath.Separator))
+	return len(splits) == 1
+}
+
+func (fp FullPath) GetRootDir() (exist bool, rootPath FullPath) {
+	exist = strings.Contains(string(fp), "quota-")
+	if !exist {
+		return
+	}
+	splits := strings.Split(strings.TrimLeft(string(fp), string(filepath.Separator)), string(filepath.Separator))
+	// [quota-1, example-dir] 代表有root dir
+	// [quota-1] 已经是root dir本身了，返回不存在即可
+	if len(splits) < 2 {
+		exist = false
+		return
+	}
+
+	rootPath = FullPath(filepath.Separator)
+	if len(splits) != 0 {
+		rootPath += FullPath(splits[0])
+	}
+
+	return
+}
+
 func (fp FullPath) Child(name string) FullPath {
 	dir := string(fp)
 	noPrefix := name
