@@ -19,7 +19,50 @@ type statsCache struct {
 
 func (wfs *WFS) StatFs(cancel <-chan struct{}, in *fuse.InHeader, out *fuse.StatfsOut) (code fuse.Status) {
 
-	// glog.V(4).Infof("reading fs stats")
+	glog.V(4).Infof("reading fs stats of %d", in.NodeId)
+
+	if in.NodeId != 1 {
+		p, _, _, status := wfs.maybeReadEntry(in.NodeId)
+		if status == fuse.OK && p.IsRootNode() {
+			glog.V(4).Infof("reading fs stats of %s", p)
+
+			cachedRootEntry, cacheErr := wfs.metaCache.FindEntry(context.Background(), p)
+			if cacheErr == filer_pb.ErrNotFound {
+				return fuse.OK
+			}
+
+			totalDiskSize := cachedRootEntry.GetXAttrSizeQuota()
+			usedDiskSize := cachedRootEntry.GetXAttrSize()
+			totalFileCount := cachedRootEntry.GetXAttrInodeQuota()
+			actualFileCount := cachedRootEntry.GetXAttrInodeCount()
+
+			// 超过上限了, 显示上限
+			if usedDiskSize > totalDiskSize {
+				totalDiskSize = usedDiskSize
+			}
+
+			// Compute the total number of available blocks
+			out.Blocks = totalDiskSize / blockSize
+
+			// Compute the number of used blocks
+			numBlocks := uint64(usedDiskSize / blockSize)
+
+			// Report the number of free and available blocks for the block size
+			out.Bfree = out.Blocks - numBlocks
+			out.Bavail = out.Blocks - numBlocks
+			out.Bsize = uint32(blockSize)
+
+			// Report the total number of possible files in the file system (and those free)
+			out.Files = totalFileCount
+			out.Ffree = totalFileCount - actualFileCount
+
+			// Report the maximum length of a name and the minimum fragment size
+			out.NameLen = 1024
+			out.Frsize = uint32(blockSize)
+
+			return fuse.OK
+		}
+	}
 
 	if wfs.stats.lastChecked < time.Now().Unix()-20 {
 
