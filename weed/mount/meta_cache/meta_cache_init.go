@@ -39,6 +39,24 @@ func EnsureVisited(mc *MetaCache, client filer_pb.FilerClient, dirPath util.Full
 
 }
 
+func RootCache(mc *MetaCache, client filer_pb.FilerClient, path util.FullPath) error {
+	glog.V(4).Infof("ReadRootEntries %s ...", path)
+	err := util.Retry("ReadRootEntries", func() error {
+		rootEntry, getErr := filer_pb.GetEntry(client, path)
+		if getErr != nil {
+			return getErr
+		}
+		entry := filer.FromPbEntry(string(path), rootEntry)
+		if err := mc.doInsertEntry(context.Background(), entry); err != nil {
+			glog.V(0).Infof("read %s: %v", entry.FullPath, err)
+			return err
+		}
+		return nil
+	})
+	glog.V(4).Infof("ReadRootEntries %s res: %v ...", path, err)
+	return err
+}
+
 func doEnsureVisited(mc *MetaCache, client filer_pb.FilerClient, path util.FullPath) error {
 
 	glog.V(4).Infof("ReadDirAllEntries %s ...", path)

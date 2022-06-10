@@ -31,6 +31,9 @@ type MountOptions struct {
 	debugPort          *int
 	localSocket        *string
 	disableXAttr       *bool
+
+	DirectoryQuotaSize  *string
+	DirectoryQuotaInode *uint64
 }
 
 var (
@@ -67,6 +70,10 @@ func init() {
 	mountOptions.debugPort = cmdMount.Flag.Int("debug.port", 6061, "http port for debugging")
 	mountOptions.localSocket = cmdMount.Flag.String("localSocket", "", "default to /tmp/seaweedfs-mount-<mount_dir_hash>.sock")
 	mountOptions.disableXAttr = cmdMount.Flag.Bool("disableXAttr", false, "disable xattr")
+
+	// if mount point is in quota-* format, then you can use these option
+	mountOptions.DirectoryQuotaSize = cmdMount.Flag.String("directoryQuotaSize", "10G", "10KiB = 1024, 10K = 1000. If mount point is in quota-* format, then you can use these option")
+	mountOptions.DirectoryQuotaInode = cmdMount.Flag.Uint64("directoryQuotaInode", 1000000, "max inode number")
 
 	mountCpuProfile = cmdMount.Flag.String("cpuprofile", "", "cpu profile output file")
 	mountMemProfile = cmdMount.Flag.String("memprofile", "", "memory profile output file")

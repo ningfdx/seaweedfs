@@ -85,6 +85,16 @@ func (entry *Entry) SetXAttrSize(b int64) {
 	entry.Extended[XATTR_PREFIX+Size_Key] = []byte(util.BytesToHumanReadable(uint64(b)))
 }
 
+func (entry *Entry) SetXAttrSizeQuota(b int64) {
+	if b < 0 {
+		b = 0
+	}
+	if entry.Extended == nil {
+		entry.Extended = make(map[string][]byte)
+	}
+	entry.Extended[XATTR_PREFIX+Size_Quota_Key] = []byte(util.BytesToHumanReadable(uint64(b)))
+}
+
 func (entry *Entry) GetXAttrInodeCount() uint64 {
 	val := entry.Extended[XATTR_PREFIX+Inode_Key]
 	if len(val) == 0 {
@@ -102,6 +112,15 @@ func (entry *Entry) SetXAttrInodeCount(b int64) {
 		entry.Extended = make(map[string][]byte)
 	}
 	entry.Extended[XATTR_PREFIX+Inode_Key] = []byte(fmt.Sprintf("%d", b))
+}
+func (entry *Entry) SetXAttrInodeCountQuota(b int64) {
+	if b < 0 {
+		b = 0
+	}
+	if entry.Extended == nil {
+		entry.Extended = make(map[string][]byte)
+	}
+	entry.Extended[XATTR_PREFIX+Inode_Quota_Key] = []byte(fmt.Sprintf("%d", b))
 }
 
 func (entry *Entry) GetXAttrSizeQuota() uint64 {

@@ -3,6 +3,7 @@ package mount
 import (
 	"context"
 	"github.com/chrislusf/seaweedfs/weed/filer"
+	"github.com/chrislusf/seaweedfs/weed/glog"
 	"github.com/chrislusf/seaweedfs/weed/mount/meta_cache"
 	"github.com/chrislusf/seaweedfs/weed/pb"
 	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
@@ -41,6 +42,10 @@ type Option struct {
 	Umask              os.FileMode
 	Quota              int64
 	DisableXAttr       bool
+
+	// if mount point is in quota-* format, then you can use these option
+	DirectoryQuotaSize  string
+	DirectoryQuotaInode uint64
 
 	MountUid         uint32
 	MountGid         uint32
@@ -116,6 +121,41 @@ func (wfs *WFS) StartBackgroundTasks() {
 	startTime := time.Now()
 	go meta_cache.SubscribeMetaEvents(wfs.metaCache, wfs.signature, wfs, wfs.option.FilerMountRootPath, startTime.UnixNano())
 	go wfs.loopCheckQuota()
+	err := meta_cache.RootCache(wfs.metaCache, wfs, util.FullPath(wfs.option.FilerMountRootPath))
+	if err != nil {
+		glog.Errorf("meta_cache.RootCache failed %s: %v", wfs.option.FilerMountRootPath, err)
+		return
+	}
+	glog.Infof("meta_cache.RootCache finished %s", wfs.option.FilerMountRootPath)
+
+	go func() {
+		time.Sleep(time.Millisecond * 400)
+		if util.FullPath(wfs.option.FilerMountRootPath).IsRootNode() {
+			glog.Infof("mount root path is a quotaNode")
+			entry, err := filer_pb.GetEntry(wfs, util.FullPath(wfs.option.FilerMountRootPath))
+			if err != nil {
+				glog.Errorf("dir GetEntry %s: %v", wfs.option.FilerMountRootPath, err)
+				return
+			}
+			localEntry := filer.FromPbEntry("/", entry)
+
+			b, err := util.ParseBytes(wfs.option.DirectoryQuotaSize)
+			if err != nil {
+				glog.Errorf("ParseBytes DirectoryQuotaSize %s: %v", wfs.option.DirectoryQuotaSize, err)
+				return
+			}
+
+			localEntry.SetXAttrSizeQuota(int64(b))
+			localEntry.SetXAttrInodeCountQuota(int64(wfs.option.DirectoryQuotaInode))
+			code := wfs.saveEntry(localEntry.FullPath, localEntry.ToProtoEntry())
+			if code != fuse.OK {
+				glog.Errorf("set DirectoryQuota failed %s", wfs.option.FilerMountRootPath)
+				return
+			}
+			glog.Errorf("set DirectoryQuota success %s, %d", wfs.option.DirectoryQuotaSize, wfs.option.DirectoryQuotaInode)
+		}
+
+	}()
 }
 
 func (wfs *WFS) String() string {

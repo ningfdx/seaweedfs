@@ -25,9 +25,9 @@ func (wfs *WFS) StatFs(cancel <-chan struct{}, in *fuse.InHeader, out *fuse.Stat
 		p, _, _, status := wfs.maybeReadEntry(in.NodeId)
 		exist, rootDir := p.GetRootDir()
 		if status == fuse.OK && exist {
-			glog.V(4).Infof("reading fs stats of %s", rootDir)
 
 			cachedRootEntry, cacheErr := wfs.metaCache.FindEntry(context.Background(), rootDir)
+			glog.V(4).Infof("reading fs stats of %s， cache is nil: %v", rootDir, cachedRootEntry == nil)
 			if cacheErr == filer_pb.ErrNotFound {
 				return fuse.OK
 			}

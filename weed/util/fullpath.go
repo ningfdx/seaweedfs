@@ -31,11 +31,13 @@ func (fp FullPath) Name() string {
 
 func (fp FullPath) IsRootNode() bool {
 	splits := strings.Split(strings.TrimLeft(string(fp), string(filepath.Separator)), string(filepath.Separator))
-	return len(splits) == 1
+	return len(splits) == 1 && strings.Contains(splits[0], QuotaDirectoryPrefix)
 }
 
+const QuotaDirectoryPrefix = "quota-"
+
 func (fp FullPath) GetRootDir() (exist bool, rootPath FullPath) {
-	exist = strings.Contains(string(fp), "quota-")
+	exist = strings.Contains(string(fp), QuotaDirectoryPrefix)
 	if !exist {
 		return
 	}
