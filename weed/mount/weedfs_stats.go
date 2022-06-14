@@ -37,6 +37,11 @@ func (wfs *WFS) StatFs(cancel <-chan struct{}, in *fuse.InHeader, out *fuse.Stat
 			totalFileCount := cachedRootEntry.GetXAttrInodeQuota()
 			actualFileCount := cachedRootEntry.GetXAttrInodeCount()
 
+			glog.V(4).Infof("reading fs stats value: totalDiskSize %v ", totalDiskSize)
+			glog.V(4).Infof("reading fs stats value: usedDiskSize %v ", usedDiskSize)
+			glog.V(4).Infof("reading fs stats value: totalFileCount %v ", totalFileCount)
+			glog.V(4).Infof("reading fs stats value: actualFileCount %v ", actualFileCount)
+
 			// 超过上限了, 显示上限
 			if usedDiskSize > totalDiskSize {
 				totalDiskSize = usedDiskSize

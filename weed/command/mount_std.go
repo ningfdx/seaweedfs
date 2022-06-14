@@ -57,7 +57,7 @@ func runMount(cmd *Command, args []string) bool {
 
 func RunMount(option *MountOptions, umask os.FileMode) bool {
 	filerMountRootPath := *option.filerMountRootPath
-	if util.FullPath(filerMountRootPath).IsRootNode() {
+	if util.FullPath(filerMountRootPath).IsQuotaRootNode() {
 		if option.DirectoryQuotaSize != nil {
 			_, err := util.ParseBytes(*option.DirectoryQuotaSize)
 			if err != nil {

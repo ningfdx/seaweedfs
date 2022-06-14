@@ -336,11 +336,11 @@ func (f *Filer) ensureParentDirecotryEntry(ctx context.Context, entry *Entry, di
 
 func (f *Filer) UpdateEntry(ctx context.Context, oldEntry, entry *Entry) (err error) {
 	if entry != nil {
-		if entry.FullPath.IsRootNode() {
+		if entry.FullPath.IsQuotaRootNode() {
 			f.updateRootNodeQuotaCache(entry)
 		}
 	} else if oldEntry != nil {
-		if oldEntry.FullPath.IsRootNode() {
+		if oldEntry.FullPath.IsQuotaRootNode() {
 			f.deleteRootNodeQuotaCache(oldEntry)
 		}
 	}
@@ -378,7 +378,7 @@ func (f *Filer) FindEntry(ctx context.Context, p util.FullPath) (entry *Entry, e
 		return Root, nil
 	}
 
-	isRootNode := p.IsRootNode()
+	isRootNode := p.IsQuotaRootNode()
 	if isRootNode {
 		if entry = f.getRootNodeQuotaCache(p); entry != nil {
 			glog.V(4).Infof("cache point of %s", p)

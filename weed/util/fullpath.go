@@ -31,6 +31,11 @@ func (fp FullPath) Name() string {
 
 func (fp FullPath) IsRootNode() bool {
 	splits := strings.Split(strings.TrimLeft(string(fp), string(filepath.Separator)), string(filepath.Separator))
+	return len(splits) == 1
+}
+
+func (fp FullPath) IsQuotaRootNode() bool {
+	splits := strings.Split(strings.TrimLeft(string(fp), string(filepath.Separator)), string(filepath.Separator))
 	return len(splits) == 1 && strings.Contains(splits[0], QuotaDirectoryPrefix)
 }
 
