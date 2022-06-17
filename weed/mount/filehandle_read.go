@@ -72,7 +72,7 @@ func (fh *FileHandle) readFromChunks(buff []byte, offset int64) (int64, error) {
 		for _, chunkView := range chunkViews {
 			glog.V(4).Infof("  read %s [%d,%d) from chunk %+v", fileFullPath, chunkView.LogicOffset, chunkView.LogicOffset+int64(chunkView.Size), chunkView.FileId)
 		}
-		reader = filer.NewChunkReaderAtFromClient(fh.wfs.LookupFn(), chunkViews, fh.wfs.chunkCache, fileSize)
+		reader = filer.NewChunkReaderAtFromClient(fh.wfs.LookupFn(), chunkViews, fh.wfs.chunkCache, fileSize, fh.wfs.option.ConcurrentReaders)
 	}
 	fh.reader = reader
 

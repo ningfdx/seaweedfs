@@ -81,12 +81,12 @@ func LookupFn(filerClient filer_pb.FilerClient) wdclient.LookupFileIdFunctionTyp
 	}
 }
 
-func NewChunkReaderAtFromClient(lookupFn wdclient.LookupFileIdFunctionType, chunkViews []*ChunkView, chunkCache chunk_cache.ChunkCache, fileSize int64) *ChunkReadAt {
+func NewChunkReaderAtFromClient(lookupFn wdclient.LookupFileIdFunctionType, chunkViews []*ChunkView, chunkCache chunk_cache.ChunkCache, fileSize int64, concurrentReaders int) *ChunkReadAt {
 
 	return &ChunkReadAt{
 		chunkViews:    chunkViews,
 		fileSize:      fileSize,
-		readerCache:   newReaderCache(32, chunkCache, lookupFn),
+		readerCache:   newReaderCache(concurrentReaders, chunkCache, lookupFn),
 		readerPattern: NewReaderPattern(),
 	}
 }
