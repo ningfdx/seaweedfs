@@ -57,7 +57,7 @@ func init() {
 	mountOptions.ttlSec = cmdMount.Flag.Int("ttl", 0, "file ttl in seconds")
 	mountOptions.chunkSizeLimitMB = cmdMount.Flag.Int("chunkSizeLimitMB", 2, "local write buffer size, also chunk large files")
 	mountOptions.concurrentWriters = cmdMount.Flag.Int("concurrentWriters", 32, "limit concurrent goroutine writers if not 0")
-	mountOptions.concurrentReaders = cmdMount.Flag.Int("ConcurrentReaders", 32, "limit concurrent goroutine readers if not 0")
+	mountOptions.concurrentReaders = cmdMount.Flag.Int("concurrentReaders", 32, "limit concurrent goroutine readers if not 0")
 	mountOptions.cacheDir = cmdMount.Flag.String("cacheDir", os.TempDir(), "local cache directory for file chunks and meta data")
 	mountOptions.cacheSizeMB = cmdMount.Flag.Int64("cacheCapacityMB", 0, "local file chunk cache capacity in MB")
 	mountOptions.dataCenter = cmdMount.Flag.String("dataCenter", "", "prefer to write to the data center")
