@@ -37,6 +37,10 @@ import (
  * @param fi file information
  */
 func (wfs *WFS) Write(cancel <-chan struct{}, in *fuse.WriteIn, data []byte) (written uint32, code fuse.Status) {
+	wfs.concurrentLimit <- true
+	defer func() {
+		<-wfs.concurrentLimit
+	}()
 
 	if wfs.IsOverQuota {
 		return 0, fuse.Status(syscall.ENOSPC)

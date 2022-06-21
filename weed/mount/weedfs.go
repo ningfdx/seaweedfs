@@ -45,6 +45,7 @@ type Option struct {
 	Umask              os.FileMode
 	Quota              int64
 	DisableXAttr       bool
+	ConcurrentLimit    int64
 
 	// if mount point is in quota-* format, then you can use these option
 	DirectoryQuotaSize  string
@@ -82,16 +83,22 @@ type WFS struct {
 	dhmap             *DirectoryHandleToInode
 	fuseServer        *fuse.Server
 	IsOverQuota       bool
+	concurrentLimit   chan bool
 }
 
 func NewSeaweedFileSystem(option *Option) *WFS {
+	concurrentLimit := option.ConcurrentLimit
+	if concurrentLimit <= 1 {
+		concurrentLimit = 2
+	}
 	wfs := &WFS{
-		RawFileSystem: fuse.NewDefaultRawFileSystem(),
-		option:        option,
-		signature:     util.RandomInt32(),
-		inodeToPath:   NewInodeToPath(util.FullPath(option.FilerMountRootPath)),
-		fhmap:         NewFileHandleToInode(),
-		dhmap:         NewDirectoryHandleToInode(),
+		RawFileSystem:   fuse.NewDefaultRawFileSystem(),
+		option:          option,
+		signature:       util.RandomInt32(),
+		inodeToPath:     NewInodeToPath(util.FullPath(option.FilerMountRootPath)),
+		fhmap:           NewFileHandleToInode(),
+		dhmap:           NewDirectoryHandleToInode(),
+		concurrentLimit: make(chan bool, concurrentLimit),
 	}
 
 	wfs.option.filerIndex = rand.Intn(len(option.FilerAddresses))
