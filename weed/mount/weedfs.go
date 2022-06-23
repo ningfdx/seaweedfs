@@ -87,6 +87,7 @@ type WFS struct {
 	concurrentLimit   chan bool
 	writeLimiter      *rate.Limiter
 	readLimiter       *rate.Limiter
+	gcCh              chan struct{}
 }
 
 func NewSeaweedFileSystem(option *Option) *WFS {
@@ -104,6 +105,7 @@ func NewSeaweedFileSystem(option *Option) *WFS {
 		concurrentLimit: make(chan bool, concurrentLimit),
 		writeLimiter:    util.NewLimiter(int(concurrentLimit) * 50 * util.MBpsLimit),
 		readLimiter:     util.NewLimiter(int(concurrentLimit) * 100 * util.MBpsLimit),
+		gcCh:            make(chan struct{}, 5),
 	}
 
 	wfs.option.filerIndex = rand.Intn(len(option.FilerAddresses))
@@ -135,6 +137,7 @@ func (wfs *WFS) StartBackgroundTasks() {
 	startTime := time.Now()
 	go meta_cache.SubscribeMetaEvents(wfs.metaCache, wfs.signature, wfs, wfs.option.FilerMountRootPath, startTime.UnixNano())
 	go wfs.loopCheckQuota()
+	go wfs.gcHelper()
 	err := wfs.PrepareForQuota()
 	if err != nil {
 		glog.Fatalf("PrepareForQuota failed %s: %v", wfs.option.FilerMountRootPath, err)

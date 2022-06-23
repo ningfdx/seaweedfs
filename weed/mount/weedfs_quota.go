@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/chrislusf/seaweedfs/weed/glog"
 	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
+	"runtime"
 	"time"
 )
 
@@ -51,4 +52,14 @@ func (wfs *WFS) loopCheckQuota() {
 
 	}
 
+}
+
+func (wfs *WFS) gcHelper() {
+	lastGCTime := time.Now()
+	for range wfs.gcCh {
+		if time.Now().Sub(lastGCTime) > time.Second*15 {
+			runtime.GC()
+			lastGCTime = time.Now()
+		}
+	}
 }
