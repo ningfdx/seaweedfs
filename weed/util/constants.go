@@ -5,14 +5,14 @@ import (
 )
 
 var (
-	VERSION_NUMBER = fmt.Sprintf("%.02f", 3.11)
-	VERSION        = sizeLimit + " " + VERSION_NUMBER + " quota, built: " + BuiltTime
+	VERSION_NUMBER = fmt.Sprintf("%.02f", 3.12)
+	VERSION        = sizeLimit + " " + VERSION_NUMBER
+	COMMIT         = ""
 
-	COMMIT = ""
-
-	BuiltTime string
+	VERSIONMore = sizeLimit + " " + VERSION_NUMBER + " quota, built: " + BuiltTime
+	BuiltTime   string
 )
 
 func Version() string {
-	return VERSION + " " + COMMIT
+	return VERSIONMore + " " + COMMIT
 }
