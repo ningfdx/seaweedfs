@@ -41,6 +41,9 @@ func (wfs *WFS) Write(cancel <-chan struct{}, in *fuse.WriteIn, data []byte) (wr
 	defer func() {
 		<-wfs.concurrentLimit
 	}()
+	if err := wfs.writeLimiter.WaitN(context.Background(), len(data)); err != nil {
+		return 0, fuse.Status(syscall.EUSERS)
+	}
 
 	if wfs.IsOverQuota {
 		return 0, fuse.Status(syscall.ENOSPC)

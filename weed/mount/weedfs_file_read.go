@@ -1,9 +1,11 @@
 package mount
 
 import (
+	"context"
 	"github.com/chrislusf/seaweedfs/weed/glog"
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"io"
+	"syscall"
 )
 
 /**
@@ -36,6 +38,9 @@ func (wfs *WFS) Read(cancel <-chan struct{}, in *fuse.ReadIn, buff []byte) (fuse
 	defer func() {
 		<-wfs.concurrentLimit
 	}()
+	if err := wfs.readLimiter.WaitN(context.Background(), len(buff)); err != nil {
+		return nil, fuse.Status(syscall.EUSERS)
+	}
 
 	fh := wfs.GetHandle(FileHandleId(in.Fh))
 	if fh == nil {

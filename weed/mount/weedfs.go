@@ -16,6 +16,7 @@ import (
 	"github.com/chrislusf/seaweedfs/weed/wdclient"
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/pkg/errors"
+	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"math/rand"
 	"os"
@@ -84,6 +85,8 @@ type WFS struct {
 	fuseServer        *fuse.Server
 	IsOverQuota       bool
 	concurrentLimit   chan bool
+	writeLimiter      *rate.Limiter
+	readLimiter       *rate.Limiter
 }
 
 func NewSeaweedFileSystem(option *Option) *WFS {
@@ -99,6 +102,8 @@ func NewSeaweedFileSystem(option *Option) *WFS {
 		fhmap:           NewFileHandleToInode(),
 		dhmap:           NewDirectoryHandleToInode(),
 		concurrentLimit: make(chan bool, concurrentLimit),
+		writeLimiter:    util.NewLimiter(int(concurrentLimit) * 50 * util.MBpsLimit),
+		readLimiter:     util.NewLimiter(int(concurrentLimit) * 100 * util.MBpsLimit),
 	}
 
 	wfs.option.filerIndex = rand.Intn(len(option.FilerAddresses))
