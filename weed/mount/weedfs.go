@@ -103,8 +103,8 @@ func NewSeaweedFileSystem(option *Option) *WFS {
 		fhmap:           NewFileHandleToInode(),
 		dhmap:           NewDirectoryHandleToInode(),
 		concurrentLimit: make(chan bool, concurrentLimit),
-		writeLimiter:    util.NewLimiter(int(concurrentLimit) * 50 * util.MBpsLimit),
-		readLimiter:     util.NewLimiter(int(concurrentLimit) * 100 * util.MBpsLimit),
+		writeLimiter:    util.NewLimiter(int(concurrentLimit) * 52 * util.MBpsLimit),
+		readLimiter:     util.NewLimiter(int(concurrentLimit) * 104 * util.MBpsLimit),
 		gcCh:            make(chan struct{}, 5),
 	}
 

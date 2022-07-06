@@ -72,12 +72,12 @@ func init() {
 	mountOptions.debug = cmdMount.Flag.Bool("debug", false, "serves runtime profiling data, e.g., http://localhost:<debug.port>/debug/pprof/goroutine?debug=2")
 	mountOptions.debugPort = cmdMount.Flag.Int("debug.port", 6061, "http port for debugging")
 	mountOptions.localSocket = cmdMount.Flag.String("localSocket", "", "default to /tmp/seaweedfs-mount-<mount_dir_hash>.sock")
-	mountOptions.disableXAttr = cmdMount.Flag.Bool("disableXAttr", false, "disable xattr")
+	mountOptions.disableXAttr = cmdMount.Flag.Bool("disableXAttr", true, "disable xattr")
 	mountOptions.ConcurrentLimit = cmdMount.Flag.Int64("concurrentLimit", 2, "concurrent limit")
 
 	// if mount point is in quota-* format, then you can use these option
-	mountOptions.DirectoryQuotaSize = cmdMount.Flag.String("directoryQuotaSize", "10G", "10KiB = 1024, 10K = 1000. If mount point is in quota-* format, then you can use these option")
-	mountOptions.DirectoryQuotaInode = cmdMount.Flag.Uint64("directoryQuotaInode", 1000000, "max inode number")
+	mountOptions.DirectoryQuotaSize = cmdMount.Flag.String("directoryQuotaSize", "200GiB", "10KiB = 1024, 10K = 1000. If mount point is in quota-* format, then you can use these option")
+	mountOptions.DirectoryQuotaInode = cmdMount.Flag.Uint64("directoryQuotaInode", 600000, "max inode number")
 
 	mountCpuProfile = cmdMount.Flag.String("cpuprofile", "", "cpu profile output file")
 	mountMemProfile = cmdMount.Flag.String("memprofile", "", "memory profile output file")
