@@ -77,6 +77,10 @@ func RunMount(option *MountOptions, umask os.FileMode) bool {
 	// try to connect to filer
 	filerAddresses := pb.ServerAddresses(*option.filer).ToAddresses()
 	util.LoadConfiguration("security", false)
+
+	//TODO: 这里使用 WithUserAgent, 向filer发送鉴权信息，filer从对应用户目录的xattr中记录的token来鉴定权限
+	// grpc.WithUserAgent("userID=user-access-token")
+	// pkg/mod/google.golang.org/grpc@v1.47.0/dialoptions.go:407
 	grpcDialOption := security.LoadClientTLS(util.GetViper(), "grpc.client")
 	var cipher bool
 	var err error

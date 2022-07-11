@@ -75,7 +75,7 @@ func (f *Filer) runEventHandler(ch <-chan *event, persistCh chan map[util.FullPa
 					sizeChanged:       rootNodeMapping[rootNode].sizeChanged + sizeChanged,
 					inodeCountChanged: rootNodeMapping[rootNode].inodeCountChanged + inodeCountChanged,
 				}
-				glog.V(4).Infof("%s type of %s, rootNode: %s, %d", tp, msg.fullPath, rootNode, sizeChanged)
+				glog.V(4).Infof("%s type of %s, rootNode: %s, %d - %d", tp, msg.fullPath, rootNode, sizeChanged, inodeCountChanged)
 				sizeChanged = 0
 				inodeCountChanged = 0
 			}
