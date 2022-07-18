@@ -9,8 +9,9 @@ var (
 	VERSION        = sizeLimit + " " + VERSION_NUMBER
 	COMMIT         = ""
 
-	VERSIONMore = sizeLimit + " " + VERSION_NUMBER + " quota, built: " + BuiltTime
+	VERSIONMore = sizeLimit + " " + VERSION_NUMBER + " " + BuiltCommit + " quota, built: " + BuiltTime
 	BuiltTime   string
+	BuiltCommit string
 )
 
 func Version() string {
