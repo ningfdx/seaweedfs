@@ -102,7 +102,7 @@ func (c *ChunkReadAt) ReadAt(p []byte, offset int64) (n int, err error) {
 	defer c.readerLock.Unlock()
 	c.readerPattern.MonitorReadAt(offset, len(p))
 
-	glog.V(4).Infof("ReadAt [%d,%d) (stream: %v) of total file size %d bytes %d chunk views", offset, offset+int64(len(p)), c.readerPattern.IsStreamingMode(), c.fileSize, len(c.chunkViews))
+	glog.V(4).Infof("ReadAt [%d,%d) (random: %v) of total file size %d bytes %d chunk views", offset, offset+int64(len(p)), c.readerPattern.IsRandomMode(), c.fileSize, len(c.chunkViews))
 	return c.doReadAt(p, offset)
 }
 
