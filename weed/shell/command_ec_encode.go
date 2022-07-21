@@ -246,18 +246,18 @@ func parallelCopyEcShardsFromSource(grpcDialOption grpc.DialOption, targetServer
 	return
 }
 
+// for ec shard balance from node, we don't want to store shard in same node, jump node every shard
+// ec shard 分布算法， 需要保证相邻的shard分布在不同节点上，并且要均匀的分布在节点的每个volume上，不能全在第一个volume上
 func balancedEcDistribution(servers []*EcNode) (allocated [][]uint32) {
 	allocated = make([][]uint32, len(servers))
 	allocatedShardIdIndex := uint32(0)
-	serverIndex := rand.Intn(len(servers))
 	for allocatedShardIdIndex < erasure_coding.TotalShardsCount {
+		rand.Seed(time.Now().UnixNano())
+		serverIndex := rand.Intn(len(servers))
+
 		if servers[serverIndex].freeEcSlot > 0 {
 			allocated[serverIndex] = append(allocated[serverIndex], allocatedShardIdIndex)
 			allocatedShardIdIndex++
-		}
-		serverIndex++
-		if serverIndex >= len(servers) {
-			serverIndex = 0
 		}
 	}
 
