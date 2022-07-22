@@ -183,7 +183,10 @@ func doUploadData(data []byte, option *UploadOption) (uploadResult *UploadResult
 			PairMap:           nil,
 			Jwt:               option.Jwt,
 		})
-		if err == nil && uploadResult == nil {
+		if err != nil {
+			return
+		}
+		if uploadResult == nil {
 			return
 		}
 		uploadResult.Name = option.Filename
@@ -204,7 +207,10 @@ func doUploadData(data []byte, option *UploadOption) (uploadResult *UploadResult
 			PairMap:           option.PairMap,
 			Jwt:               option.Jwt,
 		})
-		if err == nil && uploadResult == nil {
+		if err != nil {
+			return
+		}
+		if uploadResult == nil {
 			return
 		}
 		uploadResult.Size = uint32(clearDataLen)
