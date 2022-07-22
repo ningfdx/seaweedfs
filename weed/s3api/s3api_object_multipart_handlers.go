@@ -4,15 +4,16 @@ import (
 	"crypto/sha1"
 	"encoding/xml"
 	"fmt"
-	"github.com/chrislusf/seaweedfs/weed/glog"
-	"github.com/chrislusf/seaweedfs/weed/s3api/s3_constants"
-	"github.com/chrislusf/seaweedfs/weed/s3api/s3err"
-	weed_server "github.com/chrislusf/seaweedfs/weed/server"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/chrislusf/seaweedfs/weed/glog"
+	"github.com/chrislusf/seaweedfs/weed/s3api/s3_constants"
+	"github.com/chrislusf/seaweedfs/weed/s3api/s3err"
+	weed_server "github.com/chrislusf/seaweedfs/weed/server"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -119,7 +120,9 @@ func (s3a *S3ApiServer) AbortMultipartUploadHandler(w http.ResponseWriter, r *ht
 
 	glog.V(2).Info("AbortMultipartUploadHandler", string(s3err.EncodeXMLResponse(response)))
 
-	writeSuccessResponseXML(w, r, response)
+	//https://docs.aws.amazon.com/AmazonS3/latest/API/API_AbortMultipartUpload.html
+	s3err.WriteXMLResponse(w, r, http.StatusNoContent, response)
+	s3err.PostLog(r, http.StatusNoContent, s3err.ErrNone)
 
 }
 
@@ -244,8 +247,8 @@ func (s3a *S3ApiServer) PutObjectPartHandler(w http.ResponseWriter, r *http.Requ
 
 	glog.V(2).Infof("PutObjectPartHandler %s %s %04d", bucket, uploadID, partID)
 
-	uploadUrl := fmt.Sprintf("http://%s%s/%s/%04d.part?collection=%s",
-		s3a.option.Filer.ToHttpAddress(), s3a.genUploadsFolder(bucket), uploadID, partID, bucket)
+	uploadUrl := fmt.Sprintf("http://%s%s/%s/%04d.part",
+		s3a.option.Filer.ToHttpAddress(), s3a.genUploadsFolder(bucket), uploadID, partID)
 
 	if partID == 1 && r.Header.Get("Content-Type") == "" {
 		dataReader = mimeDetect(r, dataReader)
@@ -265,7 +268,7 @@ func (s3a *S3ApiServer) PutObjectPartHandler(w http.ResponseWriter, r *http.Requ
 }
 
 func (s3a *S3ApiServer) genUploadsFolder(bucket string) string {
-	return fmt.Sprintf("%s/%s/.uploads", s3a.option.BucketsPath, bucket)
+	return fmt.Sprintf("%s/%s/%s", s3a.option.BucketsPath, bucket, s3_constants.MultipartUploadsFolder)
 }
 
 // Generate uploadID hash string from object

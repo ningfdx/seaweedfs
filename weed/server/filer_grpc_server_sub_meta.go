@@ -2,6 +2,7 @@ package weed_server
 
 import (
 	"fmt"
+	"github.com/chrislusf/seaweedfs/weed/stats"
 	"strings"
 	"time"
 
@@ -89,14 +90,20 @@ func (fs *FilerServer) SubscribeLocalMetadata(req *filer_pb.SubscribeMetadataReq
 
 	peerAddress := findClientAddress(stream.Context(), 0)
 
+	// use negative client id to differentiate from addClient()/deleteClient() used in SubscribeMetadata()
+	req.ClientId = -req.ClientId
+
 	alreadyKnown, clientName := fs.addClient(req.ClientName, peerAddress, req.ClientId)
 	if alreadyKnown {
-		return fmt.Errorf("duplicated local subscription detected for client %s id %d", clientName, req.ClientId)
+		return fmt.Errorf("duplicated local subscription detected for client %s clientId:%d", clientName, req.ClientId)
 	}
-	defer fs.deleteClient(clientName, req.ClientId)
+	defer func() {
+		glog.V(0).Infof(" - %v local subscribe %s clientId:%d", clientName, req.PathPrefix, req.ClientId)
+		fs.deleteClient(clientName, req.ClientId)
+	}()
 
 	lastReadTime := time.Unix(0, req.SinceNs)
-	glog.V(0).Infof(" %v local subscribe %s from %+v", clientName, req.PathPrefix, lastReadTime)
+	glog.V(0).Infof(" + %v local subscribe %s from %+v clientId:%d", clientName, req.PathPrefix, lastReadTime, req.ClientId)
 
 	eachEventNotificationFn := fs.eachEventNotificationFn(req, stream, clientName)
 
@@ -229,6 +236,9 @@ func (fs *FilerServer) eachEventNotificationFn(req *filer_pb.SubscribeMetadataRe
 			}
 		}
 
+		// collect timestamps for path
+		stats.FilerServerLastSendTsOfSubscribeGauge.WithLabelValues(fs.option.Host.String(), req.ClientName, req.PathPrefix).Set(float64(tsNs))
+
 		message := &filer_pb.SubscribeMetadataResponse{
 			Directory:         dirPath,
 			EventNotification: eventNotification,
@@ -259,6 +269,9 @@ func (fs *FilerServer) addClient(clientType string, clientAddress string, client
 	if clientId != 0 {
 		fs.knownListenersLock.Lock()
 		_, alreadyKnown = fs.knownListeners[clientId]
+		if !alreadyKnown {
+			fs.knownListeners[clientId] = struct{}{}
+		}
 		fs.knownListenersLock.Unlock()
 	}
 	return

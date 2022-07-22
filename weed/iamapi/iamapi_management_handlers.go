@@ -204,6 +204,7 @@ func (iama *IamApiServer) CreatePolicy(s3cfg *iam_pb.S3ApiConfiguration, values 
 	return resp, nil
 }
 
+// https://docs.aws.amazon.com/IAM/latest/APIReference/API_PutUserPolicy.html
 func (iama *IamApiServer) PutUserPolicy(s3cfg *iam_pb.S3ApiConfiguration, values url.Values) (resp PutUserPolicyResponse, err error) {
 	userName := values.Get("UserName")
 	policyName := values.Get("PolicyName")
@@ -215,14 +216,23 @@ func (iama *IamApiServer) PutUserPolicy(s3cfg *iam_pb.S3ApiConfiguration, values
 	policyDocuments[policyName] = &policyDocument
 	actions := GetActions(&policyDocument)
 	for _, ident := range s3cfg.Identities {
-		if userName == ident.Name {
-			for _, action := range actions {
+		if userName != ident.Name {
+			continue
+		}
+
+		existedActions := make(map[string]bool, len(ident.Actions))
+		for _, action := range ident.Actions {
+			existedActions[action] = true
+		}
+
+		for _, action := range actions {
+			if !existedActions[action] {
 				ident.Actions = append(ident.Actions, action)
 			}
-			break
 		}
+		return resp, nil
 	}
-	return resp, nil
+	return resp, fmt.Errorf("%s: the user with name %s cannot be found", iam.ErrCodeNoSuchEntityException, userName)
 }
 
 func (iama *IamApiServer) GetUserPolicy(s3cfg *iam_pb.S3ApiConfiguration, values url.Values) (resp GetUserPolicyResponse, err error) {
@@ -347,7 +357,8 @@ func (iama *IamApiServer) CreateAccessKey(s3cfg *iam_pb.S3ApiConfiguration, valu
 	}
 	if !changed {
 		s3cfg.Identities = append(s3cfg.Identities,
-			&iam_pb.Identity{Name: userName,
+			&iam_pb.Identity{
+				Name: userName,
 				Credentials: []*iam_pb.Credential{
 					{
 						AccessKey: accessKeyId,
@@ -412,14 +423,11 @@ func (iama *IamApiServer) DoActions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	values := r.PostForm
-	var s3cfgLock sync.RWMutex
-	s3cfgLock.RLock()
 	s3cfg := &iam_pb.S3ApiConfiguration{}
 	if err := iama.s3ApiConfig.GetS3ApiConfiguration(s3cfg); err != nil {
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
 		return
 	}
-	s3cfgLock.RUnlock()
 
 	glog.V(4).Infof("DoActions: %+v", values)
 	var response interface{}
@@ -498,9 +506,7 @@ func (iama *IamApiServer) DoActions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if changed {
-		s3cfgLock.Lock()
 		err := iama.s3ApiConfig.PutS3ApiConfiguration(s3cfg)
-		s3cfgLock.Unlock()
 		if err != nil {
 			writeIamErrorResponse(w, r, fmt.Errorf(iam.ErrCodeServiceFailureException), "", "", err)
 			return

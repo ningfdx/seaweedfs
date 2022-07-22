@@ -7,6 +7,7 @@ import (
 	"github.com/chrislusf/seaweedfs/weed/pb/master_pb"
 	"github.com/chrislusf/seaweedfs/weed/util"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -57,7 +58,7 @@ func (ma *MetaAggregator) OnPeerUpdate(update *master_pb.ClusterNodeUpdate, star
 	if update.IsAdd {
 		// every filer should subscribe to a new filer
 		if ma.setActive(address, true) {
-			go ma.loopSubscribeToOnefiler(ma.filer, ma.self, address, startFrom)
+			go ma.loopSubscribeToOneFiler(ma.filer, ma.self, address, startFrom)
 		}
 	} else {
 		ma.setActive(address, false)
@@ -89,18 +90,23 @@ func (ma *MetaAggregator) isActive(address pb.ServerAddress) (isActive bool) {
 	return count > 0 && isActive
 }
 
-func (ma *MetaAggregator) loopSubscribeToOnefiler(f *Filer, self pb.ServerAddress, peer pb.ServerAddress, startFrom time.Time) {
+func (ma *MetaAggregator) loopSubscribeToOneFiler(f *Filer, self pb.ServerAddress, peer pb.ServerAddress, startFrom time.Time) {
 	lastTsNs := startFrom.UnixNano()
 	for {
-		glog.V(0).Infof("loopSubscribeToOnefiler read %s start from %v %d", peer, time.Unix(0, lastTsNs), lastTsNs)
+		glog.V(0).Infof("loopSubscribeToOneFiler read %s start from %v %d", peer, time.Unix(0, lastTsNs), lastTsNs)
 		nextLastTsNs, err := ma.doSubscribeToOneFiler(f, self, peer, lastTsNs)
 		if !ma.isActive(peer) {
 			glog.V(0).Infof("stop subscribing remote %s meta change", peer)
 			return
 		}
 		if err != nil {
-			glog.V(0).Infof("subscribing remote %s meta change: %v", peer, err)
-		} else if lastTsNs < nextLastTsNs {
+			errLvl := glog.Level(0)
+			if strings.Contains(err.Error(), "duplicated local subscription detected") {
+				errLvl = glog.Level(1)
+			}
+			glog.V(errLvl).Infof("subscribing remote %s meta change: %v", peer, err)
+		}
+		if lastTsNs < nextLastTsNs {
 			lastTsNs = nextLastTsNs
 		}
 		time.Sleep(1733 * time.Millisecond)
@@ -184,7 +190,7 @@ func (ma *MetaAggregator) doSubscribeToOneFiler(f *Filer, self pb.ServerAddress,
 		return nil
 	}
 
-	glog.V(4).Infof("subscribing remote %s meta change: %v", peer, time.Unix(0, lastTsNs))
+	glog.V(0).Infof("subscribing remote %s meta change: %v, clientId:%d", peer, time.Unix(0, lastTsNs), ma.filer.UniqueFileId)
 	err = pb.WithFilerClient(true, peer, ma.grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -210,10 +216,9 @@ func (ma *MetaAggregator) doSubscribeToOneFiler(f *Filer, self pb.ServerAddress,
 			if err := processEventFn(resp); err != nil {
 				return fmt.Errorf("process %v: %v", resp, err)
 			}
-			lastTsNs = resp.TsNs
 
 			f.onMetadataChangeEvent(resp)
-
+			lastTsNs = resp.TsNs
 		}
 	})
 	return lastTsNs, err

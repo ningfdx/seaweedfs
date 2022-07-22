@@ -113,7 +113,7 @@ func (ms *MasterServer) SendHeartbeat(stream master_pb.Seaweed_SendHeartbeatServ
 			uuidlist, err := ms.RegisterUuids(heartbeat)
 			if err != nil {
 				if stream_err := stream.Send(&master_pb.HeartbeatResponse{
-					DuplicatedUuids:    uuidlist,
+					DuplicatedUuids: uuidlist,
 				}); stream_err != nil {
 					glog.Warningf("SendHeartbeat.Send DuplicatedDirectory response to %s:%d %v", dn.Ip, dn.Port, stream_err)
 					return stream_err
@@ -263,8 +263,12 @@ func (ms *MasterServer) KeepConnected(stream master_pb.Seaweed_KeepConnectedServ
 		}
 		ms.deleteClient(clientName)
 	}()
-
-	for _, message := range ms.Topo.ToVolumeLocations() {
+	for i, message := range ms.Topo.ToVolumeLocations() {
+		if i == 0 {
+			if leader, err := ms.Topo.Leader(); err == nil {
+				message.Leader = string(leader)
+			}
+		}
 		if sendErr := stream.Send(&master_pb.KeepConnectedResponse{VolumeLocation: message}); sendErr != nil {
 			return sendErr
 		}

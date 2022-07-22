@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -44,13 +46,11 @@ func GenerateDirUuid(dir string) (dirUuidString string, err error) {
 		dirUuidString = dirUuid.String()
 		writeErr := util.WriteFile(fileName, []byte(dirUuidString), 0644)
 		if writeErr != nil {
-			glog.Warningf("failed to write uuid to %s : %v", fileName, writeErr)
 			return "", fmt.Errorf("failed to write uuid to %s : %v", fileName, writeErr)
 		}
 	} else {
 		uuidData, readErr := os.ReadFile(fileName)
 		if readErr != nil {
-			glog.Warningf("failed to read uuid from %s : %v", fileName, readErr)
 			return "", fmt.Errorf("failed to read uuid from %s : %v", fileName, readErr)
 		}
 		dirUuidString = string(uuidData)
@@ -65,7 +65,10 @@ func NewDiskLocation(dir string, maxVolumeCount int, minFreeSpace util.MinFreeSp
 	} else {
 		idxDir = util.ResolvePath(idxDir)
 	}
-	dirUuid, _ := GenerateDirUuid(dir)
+	dirUuid, err := GenerateDirUuid(dir)
+	if err != nil {
+		glog.Fatalf("cannot generate uuid of dir %s: %v", dir, err)
+	}
 	location := &DiskLocation{
 		Directory:              dir,
 		DirectoryUuid:          dirUuid,
@@ -205,7 +208,21 @@ func (l *DiskLocation) concurrentLoadingVolumes(needleMapKind NeedleMapKind, con
 
 func (l *DiskLocation) loadExistingVolumes(needleMapKind NeedleMapKind) {
 
-	l.concurrentLoadingVolumes(needleMapKind, 10)
+	workerNum := runtime.NumCPU()
+	val, ok := os.LookupEnv("GOMAXPROCS")
+	if ok {
+		num, err := strconv.Atoi(val)
+		if err != nil || num < 1 {
+			num = 10
+			glog.Warningf("failed to set worker number from GOMAXPROCS , set to default:10")
+		}
+		workerNum = num
+	} else {
+		if workerNum <= 10 {
+			workerNum = 10
+		}
+	}
+	l.concurrentLoadingVolumes(needleMapKind, workerNum)
 	glog.V(0).Infof("Store started on dir: %s with %d volumes max %d", l.Directory, len(l.volumes), l.MaxVolumeCount)
 
 	l.loadAllEcShards()

@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/chrislusf/seaweedfs/weed/wdclient"
 	"io"
 	"math"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/chrislusf/seaweedfs/weed/wdclient"
 
 	"github.com/golang/protobuf/proto"
 
@@ -64,14 +65,14 @@ func ResolveChunkManifest(lookupFileIdFn wdclient.LookupFileIdFunctionType, chun
 
 		resolvedChunks, err := ResolveOneChunkManifest(lookupFileIdFn, chunk)
 		if err != nil {
-			return chunks, nil, err
+			return dataChunks, nil, err
 		}
 
 		manifestChunks = append(manifestChunks, chunk)
 		// recursive
 		subDataChunks, subManifestChunks, subErr := ResolveChunkManifest(lookupFileIdFn, resolvedChunks, startOffset, stopOffset)
 		if subErr != nil {
-			return chunks, nil, subErr
+			return dataChunks, nil, subErr
 		}
 		dataChunks = append(dataChunks, subDataChunks...)
 		manifestChunks = append(manifestChunks, subManifestChunks...)

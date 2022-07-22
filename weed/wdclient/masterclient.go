@@ -2,6 +2,7 @@ package wdclient
 
 import (
 	"context"
+	"fmt"
 	"github.com/chrislusf/seaweedfs/weed/stats"
 	"math/rand"
 	"time"
@@ -36,6 +37,38 @@ func NewMasterClient(grpcDialOption grpc.DialOption, filerGroup string, clientTy
 		grpcDialOption: grpcDialOption,
 		vidMap:         newVidMap(clientDataCenter),
 	}
+}
+
+func (mc *MasterClient) GetLookupFileIdFunction() LookupFileIdFunctionType {
+	return mc.LookupFileIdWithFallback
+}
+
+func (mc *MasterClient) LookupFileIdWithFallback(fileId string) (fullUrls []string, err error) {
+	fullUrls, err = mc.vidMap.LookupFileId(fileId)
+	if err == nil && len(fullUrls) > 0 {
+		return
+	}
+	err = pb.WithMasterClient(false, mc.currentMaster, mc.grpcDialOption, func(client master_pb.SeaweedClient) error {
+		resp, err := client.LookupVolume(context.Background(), &master_pb.LookupVolumeRequest{
+			VolumeOrFileIds: []string{fileId},
+		})
+		if err != nil {
+			return fmt.Errorf("LookupVolume failed: %v", err)
+		}
+		for vid, vidLocation := range resp.VolumeIdLocations {
+			for _, vidLoc := range vidLocation.Locations {
+				loc := Location{
+					Url:       vidLoc.Url,
+					PublicUrl: vidLoc.PublicUrl,
+					GrpcPort:  int(vidLoc.GrpcPort),
+				}
+				mc.vidMap.addLocation(uint32(vid), loc)
+				fullUrls = append(fullUrls, "http://"+loc.Url+"/"+fileId)
+			}
+		}
+		return nil
+	})
+	return
 }
 
 func (mc *MasterClient) GetMaster() pb.ServerAddress {
@@ -98,7 +131,6 @@ func (mc *MasterClient) tryAllMasters() {
 		}
 
 		mc.currentMaster = ""
-		mc.vidMap = newVidMap("")
 	}
 }
 
@@ -126,8 +158,28 @@ func (mc *MasterClient) tryConnectToMaster(master pb.ServerAddress) (nextHintedL
 			stats.MasterClientConnectCounter.WithLabelValues(stats.FailedToSend).Inc()
 			return err
 		}
-
 		glog.V(1).Infof("%s.%s masterClient Connected to %v", mc.FilerGroup, mc.clientType, master)
+
+		resp, err := stream.Recv()
+		if err != nil {
+			glog.V(0).Infof("%s.%s masterClient failed to receive from %s: %v", mc.FilerGroup, mc.clientType, master, err)
+			stats.MasterClientConnectCounter.WithLabelValues(stats.FailedToReceive).Inc()
+			return err
+		}
+
+		// check if it is the leader to determine whether to reset the vidMap
+		if resp.VolumeLocation != nil {
+			if resp.VolumeLocation.Leader != "" && string(master) != resp.VolumeLocation.Leader {
+				glog.V(0).Infof("master %v redirected to leader %v", master, resp.VolumeLocation.Leader)
+				nextHintedLeader = pb.ServerAddress(resp.VolumeLocation.Leader)
+				stats.MasterClientConnectCounter.WithLabelValues(stats.RedirectedToleader).Inc()
+				return nil
+			}
+			mc.vidMap = newVidMap("")
+			mc.updateVidMap(resp)
+		} else {
+			mc.vidMap = newVidMap("")
+		}
 		mc.currentMaster = master
 
 		for {
@@ -140,36 +192,14 @@ func (mc *MasterClient) tryConnectToMaster(master pb.ServerAddress) (nextHintedL
 
 			if resp.VolumeLocation != nil {
 				// maybe the leader is changed
-				if resp.VolumeLocation.Leader != "" {
-					glog.V(0).Infof("redirected to leader %v", resp.VolumeLocation.Leader)
+				if resp.VolumeLocation.Leader != "" && string(mc.currentMaster) != resp.VolumeLocation.Leader {
+					glog.V(0).Infof("currentMaster %v redirected to leader %v", mc.currentMaster, resp.VolumeLocation.Leader)
 					nextHintedLeader = pb.ServerAddress(resp.VolumeLocation.Leader)
 					stats.MasterClientConnectCounter.WithLabelValues(stats.RedirectedToleader).Inc()
 					return nil
 				}
 
-				// process new volume location
-				loc := Location{
-					Url:        resp.VolumeLocation.Url,
-					PublicUrl:  resp.VolumeLocation.PublicUrl,
-					DataCenter: resp.VolumeLocation.DataCenter,
-					GrpcPort:   int(resp.VolumeLocation.GrpcPort),
-				}
-				for _, newVid := range resp.VolumeLocation.NewVids {
-					glog.V(1).Infof("%s.%s: %s masterClient adds volume %d", mc.FilerGroup, mc.clientType, loc.Url, newVid)
-					mc.addLocation(newVid, loc)
-				}
-				for _, deletedVid := range resp.VolumeLocation.DeletedVids {
-					glog.V(1).Infof("%s.%s: %s masterClient removes volume %d", mc.FilerGroup, mc.clientType, loc.Url, deletedVid)
-					mc.deleteLocation(deletedVid, loc)
-				}
-				for _, newEcVid := range resp.VolumeLocation.NewEcVids {
-					glog.V(1).Infof("%s.%s: %s masterClient adds ec volume %d", mc.FilerGroup, mc.clientType, loc.Url, newEcVid)
-					mc.addEcLocation(newEcVid, loc)
-				}
-				for _, deletedEcVid := range resp.VolumeLocation.DeletedEcVids {
-					glog.V(1).Infof("%s.%s: %s masterClient removes ec volume %d", mc.FilerGroup, mc.clientType, loc.Url, deletedEcVid)
-					mc.deleteEcLocation(deletedEcVid, loc)
-				}
+				mc.updateVidMap(resp)
 			}
 
 			if resp.ClusterNodeUpdate != nil {
@@ -195,6 +225,32 @@ func (mc *MasterClient) tryConnectToMaster(master pb.ServerAddress) (nextHintedL
 		glog.V(1).Infof("%s.%s masterClient failed to connect with master %v: %v", mc.FilerGroup, mc.clientType, master, gprcErr)
 	}
 	return
+}
+
+func (mc *MasterClient) updateVidMap(resp *master_pb.KeepConnectedResponse) {
+	// process new volume location
+	loc := Location{
+		Url:        resp.VolumeLocation.Url,
+		PublicUrl:  resp.VolumeLocation.PublicUrl,
+		DataCenter: resp.VolumeLocation.DataCenter,
+		GrpcPort:   int(resp.VolumeLocation.GrpcPort),
+	}
+	for _, newVid := range resp.VolumeLocation.NewVids {
+		glog.V(1).Infof("%s.%s: %s masterClient adds volume %d", mc.FilerGroup, mc.clientType, loc.Url, newVid)
+		mc.addLocation(newVid, loc)
+	}
+	for _, deletedVid := range resp.VolumeLocation.DeletedVids {
+		glog.V(1).Infof("%s.%s: %s masterClient removes volume %d", mc.FilerGroup, mc.clientType, loc.Url, deletedVid)
+		mc.deleteLocation(deletedVid, loc)
+	}
+	for _, newEcVid := range resp.VolumeLocation.NewEcVids {
+		glog.V(1).Infof("%s.%s: %s masterClient adds ec volume %d", mc.FilerGroup, mc.clientType, loc.Url, newEcVid)
+		mc.addEcLocation(newEcVid, loc)
+	}
+	for _, deletedEcVid := range resp.VolumeLocation.DeletedEcVids {
+		glog.V(1).Infof("%s.%s: %s masterClient removes ec volume %d", mc.FilerGroup, mc.clientType, loc.Url, deletedEcVid)
+		mc.deleteEcLocation(deletedEcVid, loc)
+	}
 }
 
 func (mc *MasterClient) WithClient(streamingMode bool, fn func(client master_pb.SeaweedClient) error) error {
