@@ -170,6 +170,23 @@ func (ms *MasterServer) Assign(ctx context.Context, req *master_pb.AssignRequest
 					GrpcPort:  uint32(r.GrpcPort),
 				})
 			}
+
+			var assignInfo string
+			assignInfo = fmt.Sprintf("ndebug: assign a fid %s, env: ", fid)
+			for _, dnNode := range dn.Children() {
+				diskInfo := dnNode.(*topology.Disk).ToDiskInfo().VolumeInfos
+				for _, dnVolume := range diskInfo {
+					assignInfo += fmt.Sprintf("vid master: %d, size: %d, readOnly: %v\n", dnVolume.Id, dnVolume.Size, dnVolume.ReadOnly)
+				}
+				for _, v := range dnList.Rest() {
+					diskInfoReplica := v.Children()[0].(*topology.Disk).ToDiskInfo().VolumeInfos
+					for _, dnVolume := range diskInfoReplica {
+						assignInfo += fmt.Sprintf("vid replica: %d, size: %d, readOnly: %v\n", dnVolume.Id, dnVolume.Size, dnVolume.ReadOnly)
+					}
+				}
+			}
+			glog.V(4).Infoln(assignInfo)
+
 			return &master_pb.AssignResponse{
 				Fid: fid,
 				Location: &master_pb.Location{
