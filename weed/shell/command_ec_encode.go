@@ -7,6 +7,7 @@ import (
 	"github.com/chrislusf/seaweedfs/weed/pb"
 	"io"
 	"math/rand"
+	"strings"
 	"sync"
 	"time"
 
@@ -149,9 +150,9 @@ func spreadEcShards(commandEnv *CommandEnv, volumeId needle.VolumeId, collection
 		return fmt.Errorf("not enough free ec shard slots. only %d left", totalFreeEcSlots)
 	}
 	allocatedDataNodes := allEcNodes
-	if len(allocatedDataNodes) > erasure_coding.TotalShardsCount {
-		allocatedDataNodes = allocatedDataNodes[:erasure_coding.TotalShardsCount]
-	}
+	//if len(allocatedDataNodes) > erasure_coding.TotalShardsCount {
+	//	allocatedDataNodes = allocatedDataNodes[:erasure_coding.TotalShardsCount]
+	//}
 
 	// calculate how many shards to allocate for these servers
 	allocatedEcIds := balancedEcDistribution(allocatedDataNodes)
@@ -246,21 +247,61 @@ func parallelCopyEcShardsFromSource(grpcDialOption grpc.DialOption, targetServer
 	return
 }
 
+type EcNodeInfo struct {
+	Index int
+	*EcNode
+}
+
+func deviceEcNodesFromIP(servers []*EcNode) (nodes map[string][]EcNodeInfo) {
+	nodes = make(map[string][]EcNodeInfo)
+	for i := range servers {
+		if servers[i].info == nil {
+			nodes[""] = append(nodes[""], EcNodeInfo{
+				i,
+				servers[i],
+			})
+		}
+		ip := strings.Split(servers[i].info.Id, ":")[0]
+		nodes[ip] = append(nodes[ip], EcNodeInfo{
+			i,
+			servers[i],
+		})
+	}
+	return
+}
+
 // for ec shard balance from node, we don't want to store shard in same node, jump node every shard
 // ec shard 分布算法， 需要保证相邻的shard分布在不同节点上，并且要均匀的分布在节点的每个volume上，不能全在第一个volume上
 func balancedEcDistribution(servers []*EcNode) (allocated [][]uint32) {
+	ipNodes := deviceEcNodesFromIP(servers)
+	standardCountOfServer := len(servers) / len(ipNodes)
+
 	allocated = make([][]uint32, len(servers))
 	allocatedShardIdIndex := uint32(0)
-	for allocatedShardIdIndex < erasure_coding.TotalShardsCount {
-		rand.Seed(time.Now().UnixNano())
-		serverIndex := rand.Intn(len(servers))
 
-		if servers[serverIndex].freeEcSlot > 0 {
-			allocated[serverIndex] = append(allocated[serverIndex], allocatedShardIdIndex)
+	var tmpOffset int
+	var balanceIpIndex string
+	for allocatedShardIdIndex < erasure_coding.TotalShardsCount {
+		for ip, v := range ipNodes {
+			rand.Seed(time.Now().UnixNano())
+			if len(v) < standardCountOfServer {
+				tmpOffset++
+				if tmpOffset%2 == 0 {
+					continue
+				}
+			}
+			thisNode := v[rand.Intn(len(v))]
+			allocated[thisNode.Index] = append(allocated[thisNode.Index], allocatedShardIdIndex)
+			balanceIpIndex += fmt.Sprintf("balance %d: ip %s, thisIndex %d\n", allocatedShardIdIndex, ip, thisNode.Index)
 			allocatedShardIdIndex++
+
+			if allocatedShardIdIndex >= erasure_coding.TotalShardsCount {
+				break
+			}
 		}
 	}
 
+	fmt.Printf("ndebug: balancedEcDistribution, val: %v,\n %s", allocated, balanceIpIndex)
 	return allocated
 }
 
