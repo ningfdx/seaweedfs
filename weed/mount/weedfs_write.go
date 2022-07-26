@@ -19,6 +19,9 @@ func (wfs *WFS) saveDataAsChunk(fullPath util.FullPath) filer.SaveDataAsChunkFun
 		var fileId, host string
 		var auth security.EncodedJwt
 
+		var uploadResult *operation.UploadResult
+		var data []byte
+
 		if err := wfs.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 			return util.Retry("assignVolume", func() error {
 				request := &filer_pb.AssignVolumeRequest{
@@ -45,33 +48,35 @@ func (wfs *WFS) saveDataAsChunk(fullPath util.FullPath) filer.SaveDataAsChunkFun
 				host = wfs.AdjustedUrl(loc)
 				collection, replication = resp.Collection, resp.Replication
 
+				glog.V(4).Infof("assign volume result: %s", host)
+
+				fileUrl := fmt.Sprintf("http://%s/%s", host, fileId)
+				if wfs.option.VolumeServerAccess == "filerProxy" {
+					fileUrl = fmt.Sprintf("http://%s/?proxyChunkId=%s", wfs.getCurrentFiler(), fileId)
+				}
+				uploadOption := &operation.UploadOption{
+					UploadUrl:         fileUrl,
+					Filename:          filename,
+					Cipher:            wfs.option.Cipher,
+					IsInputCompressed: false,
+					MimeType:          "",
+					PairMap:           nil,
+					Jwt:               auth,
+				}
+				uploadResult, err, data = operation.Upload(reader, uploadOption)
+				if err != nil {
+					glog.V(0).Infof("upload data %v to %s: %v", filename, fileUrl, err)
+					return fmt.Errorf("upload data: %v", err)
+				}
+				if uploadResult.Error != "" {
+					glog.V(0).Infof("upload failure %v to %s: %v", filename, fileUrl, err)
+					return fmt.Errorf("upload result: %v", uploadResult.Error)
+				}
+
 				return nil
 			})
 		}); err != nil {
-			return nil, "", "", fmt.Errorf("filerGrpcAddress assign volume: %v", err)
-		}
-
-		fileUrl := fmt.Sprintf("http://%s/%s", host, fileId)
-		if wfs.option.VolumeServerAccess == "filerProxy" {
-			fileUrl = fmt.Sprintf("http://%s/?proxyChunkId=%s", wfs.getCurrentFiler(), fileId)
-		}
-		uploadOption := &operation.UploadOption{
-			UploadUrl:         fileUrl,
-			Filename:          filename,
-			Cipher:            wfs.option.Cipher,
-			IsInputCompressed: false,
-			MimeType:          "",
-			PairMap:           nil,
-			Jwt:               auth,
-		}
-		uploadResult, err, data := operation.Upload(reader, uploadOption)
-		if err != nil {
-			glog.V(0).Infof("upload data %v to %s: %v", filename, fileUrl, err)
-			return nil, "", "", fmt.Errorf("upload data: %v", err)
-		}
-		if uploadResult.Error != "" {
-			glog.V(0).Infof("upload failure %v to %s: %v", filename, fileUrl, err)
-			return nil, "", "", fmt.Errorf("upload result: %v", uploadResult.Error)
+			return nil, "", "", fmt.Errorf("filerGrpcAddress assign volume and upload to volume: %v", err)
 		}
 
 		if offset == 0 {
