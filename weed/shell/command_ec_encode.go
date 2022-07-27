@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/chrislusf/seaweedfs/weed/pb"
+	"github.com/chrislusf/seaweedfs/weed/util"
 	"io"
 	"math/rand"
 	"strings"
@@ -84,13 +85,17 @@ func (c *commandEcEncode) Do(args []string, commandEnv *CommandEnv, writer io.Wr
 		return err
 	}
 	fmt.Printf("ec encode volumes: %v\n", volumeIds)
+
+	pool := util.NewPool(10)
 	for _, vid := range volumeIds {
-		if err = doEcEncode(commandEnv, *collection, vid, *parallelCopy); err != nil {
-			return err
-		}
+		thisWork := vid
+		pool.Run(func() error {
+			return doEcEncode(commandEnv, *collection, thisWork, *parallelCopy)
+		})
 	}
 
-	return nil
+	res := pool.Wait()
+	return util.MarshalErrors(res)
 }
 
 func doEcEncode(commandEnv *CommandEnv, collection string, vid needle.VolumeId, parallelCopy bool) (err error) {
@@ -124,7 +129,7 @@ func doEcEncode(commandEnv *CommandEnv, collection string, vid needle.VolumeId, 
 }
 
 func generateEcShards(grpcDialOption grpc.DialOption, volumeId needle.VolumeId, collection string, sourceVolumeServer pb.ServerAddress) error {
-
+	start := time.Now()
 	fmt.Printf("generateEcShards %s %d on %s ...\n", collection, volumeId, sourceVolumeServer)
 
 	err := operation.WithVolumeServerClient(false, sourceVolumeServer, grpcDialOption, func(volumeServerClient volume_server_pb.VolumeServerClient) error {
@@ -134,13 +139,13 @@ func generateEcShards(grpcDialOption grpc.DialOption, volumeId needle.VolumeId, 
 		})
 		return genErr
 	})
-
+	fmt.Printf("generateEcShards %s %d on %s cost %s ...\n", collection, volumeId, sourceVolumeServer, time.Now().Sub(start))
 	return err
 
 }
 
 func spreadEcShards(commandEnv *CommandEnv, volumeId needle.VolumeId, collection string, existingLocations []wdclient.Location, parallelCopy bool) (err error) {
-
+	start := time.Now()
 	allEcNodes, totalFreeEcSlots, err := collectEcNodes(commandEnv, "")
 	if err != nil {
 		return err
@@ -156,6 +161,7 @@ func spreadEcShards(commandEnv *CommandEnv, volumeId needle.VolumeId, collection
 
 	// calculate how many shards to allocate for these servers
 	allocatedEcIds := balancedEcDistribution(allocatedDataNodes)
+	fmt.Printf("balancedEcDistribution %s %d cost %s ...\n", collection, volumeId, time.Now().Sub(start).String())
 
 	// ask the data nodes to copy from the source volume server
 	copiedShardIds, err := parallelCopyEcShardsFromSource(commandEnv.option.GrpcDialOption, allocatedDataNodes, allocatedEcIds, volumeId, collection, existingLocations[0], parallelCopy)
@@ -184,6 +190,7 @@ func spreadEcShards(commandEnv *CommandEnv, volumeId needle.VolumeId, collection
 		}
 	}
 
+	fmt.Printf("spreadEcShards %s %d cost %s ...\n", collection, volumeId, time.Now().Sub(start).String())
 	return err
 
 }
