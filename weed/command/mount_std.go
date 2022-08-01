@@ -249,6 +249,7 @@ func RunMount(option *MountOptions, umask os.FileMode) bool {
 		UidGidMapper:        uidGidMapper,
 		DisableXAttr:        *option.disableXAttr,
 		ConcurrentLimit:     *option.ConcurrentLimit,
+		AuthKey:             *option.AuthKey,
 		DirectoryQuotaSize:  *option.DirectoryQuotaSize,
 		DirectoryQuotaInode: *option.DirectoryQuotaInode,
 	})

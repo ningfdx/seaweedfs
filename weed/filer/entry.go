@@ -54,6 +54,7 @@ const (
 	Size_Key        = "size"
 	Inode_Quota_Key = "quota-inode"
 	Inode_Key       = "inode"
+	Auth_Key        = "auth-key"
 
 	QuotaErrorPrefix = "QuotaError:"
 )
@@ -134,6 +135,15 @@ func (entry *Entry) GetXAttrSizeQuota() uint64 {
 		return 0
 	}
 	return b
+}
+
+func (entry *Entry) SetAuthKey(authKey string) {
+	entry.Extended[XATTR_PREFIX+Auth_Key] = []byte(authKey)
+}
+
+func (entry *Entry) GetAuthKey() string {
+	val := entry.Extended[XATTR_PREFIX+Auth_Key]
+	return string(val)
 }
 
 func (entry *Entry) GetXAttrInodeQuota() uint64 {
