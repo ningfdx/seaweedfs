@@ -56,6 +56,8 @@ func runMount(cmd *Command, args []string) bool {
 }
 
 func RunMount(option *MountOptions, umask os.FileMode) bool {
+	startTime := time.Now()
+
 	filerMountRootPath := *option.filerMountRootPath
 	if util.FullPath(filerMountRootPath).IsQuotaRootNode() {
 		if option.DirectoryQuotaSize != nil {
@@ -184,8 +186,8 @@ func RunMount(option *MountOptions, umask os.FileMode) bool {
 		MaxReadAhead:             1024 * 1024 * 2,
 		IgnoreSecurityLabels:     false,
 		RememberInodes:           false,
-		FsName:                   "seaweedfs:" + filerMountRootPath,
-		Name:                     "seaweedfs",
+		FsName:                   "adfs:" + filerMountRootPath,
+		Name:                     "adfs",
 		SingleThreaded:           false,
 		DisableXAttrs:            *option.disableXAttr,
 		Debug:                    *option.debug,
@@ -253,6 +255,7 @@ func RunMount(option *MountOptions, umask os.FileMode) bool {
 		UidGidMapper:        uidGidMapper,
 		DisableXAttr:        *option.disableXAttr,
 		ConcurrentLimit:     *option.ConcurrentLimit,
+		AuthKey:             *option.AuthKey,
 		DirectoryQuotaSize:  *option.DirectoryQuotaSize,
 		DirectoryQuotaInode: *option.DirectoryQuotaInode,
 	})
@@ -272,7 +275,7 @@ func RunMount(option *MountOptions, umask os.FileMode) bool {
 
 	seaweedFileSystem.StartBackgroundTasks()
 
-	fmt.Printf("This is SeaweedFS version %s %s %s\n", util.Version(), runtime.GOOS, runtime.GOARCH)
+	fmt.Printf("This is SeaweedFS version %s %s %s, start cost: %s\n", util.Version(), runtime.GOOS, runtime.GOARCH, time.Now().Sub(startTime).String())
 
 	server.Serve()
 

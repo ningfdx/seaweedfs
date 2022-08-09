@@ -61,11 +61,11 @@ func (fs *FilerSink) replicateOneChunk(sourceChunk *filer_pb.FileChunk, path str
 
 func (fs *FilerSink) fetchAndWrite(sourceChunk *filer_pb.FileChunk, path string) (fileId string, err error) {
 
-	filename, header, resp, err := fs.filerSource.ReadPart(sourceChunk.GetFileIdString())
+	filename, header, readResp, err := fs.filerSource.ReadPart(sourceChunk.GetFileIdString())
 	if err != nil {
 		return "", fmt.Errorf("read part %s: %v", sourceChunk.GetFileIdString(), err)
 	}
-	defer util.CloseResponse(resp)
+	defer util.CloseResponse(readResp)
 
 	var host string
 	var auth security.EncodedJwt
@@ -93,37 +93,37 @@ func (fs *FilerSink) fetchAndWrite(sourceChunk *filer_pb.FileChunk, path string)
 
 			fileId, host, auth = resp.FileId, resp.Location.Url, security.EncodedJwt(resp.Auth)
 
+			fileUrl := fmt.Sprintf("http://%s/%s", host, fileId)
+			if fs.writeChunkByFiler {
+				fileUrl = fmt.Sprintf("http://%s/?proxyChunkId=%s", fs.address, fileId)
+			}
+
+			glog.V(4).Infof("replicating %s to %s header:%+v", filename, fileUrl, header)
+
+			// fetch data as is, regardless whether it is encrypted or not
+			uploadOption := &operation.UploadOption{
+				UploadUrl:         fileUrl,
+				Filename:          filename,
+				Cipher:            false,
+				IsInputCompressed: "gzip" == header.Get("Content-Encoding"),
+				MimeType:          header.Get("Content-Type"),
+				PairMap:           nil,
+				Jwt:               auth,
+			}
+			uploadResult, err, _ := operation.Upload(readResp.Body, uploadOption)
+			if err != nil {
+				glog.V(0).Infof("upload source data %v to %s: %v", sourceChunk.GetFileIdString(), fileUrl, err)
+				return fmt.Errorf("upload data: %v", err)
+			}
+			if uploadResult.Error != "" {
+				glog.V(0).Infof("upload failure %v to %s: %v", filename, fileUrl, err)
+				return fmt.Errorf("upload result: %v", uploadResult.Error)
+			}
+
 			return nil
 		})
 	}); err != nil {
-		return "", fmt.Errorf("filerGrpcAddress assign volume: %v", err)
-	}
-
-	fileUrl := fmt.Sprintf("http://%s/%s", host, fileId)
-	if fs.writeChunkByFiler {
-		fileUrl = fmt.Sprintf("http://%s/?proxyChunkId=%s", fs.address, fileId)
-	}
-
-	glog.V(4).Infof("replicating %s to %s header:%+v", filename, fileUrl, header)
-
-	// fetch data as is, regardless whether it is encrypted or not
-	uploadOption := &operation.UploadOption{
-		UploadUrl:         fileUrl,
-		Filename:          filename,
-		Cipher:            false,
-		IsInputCompressed: "gzip" == header.Get("Content-Encoding"),
-		MimeType:          header.Get("Content-Type"),
-		PairMap:           nil,
-		Jwt:               auth,
-	}
-	uploadResult, err, _ := operation.Upload(resp.Body, uploadOption)
-	if err != nil {
-		glog.V(0).Infof("upload source data %v to %s: %v", sourceChunk.GetFileIdString(), fileUrl, err)
-		return "", fmt.Errorf("upload data: %v", err)
-	}
-	if uploadResult.Error != "" {
-		glog.V(0).Infof("upload failure %v to %s: %v", filename, fileUrl, err)
-		return "", fmt.Errorf("upload result: %v", uploadResult.Error)
+		return "", fmt.Errorf("filerGrpcAddress assign volume and upload to volume: %v", err)
 	}
 
 	return

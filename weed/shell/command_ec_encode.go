@@ -5,8 +5,10 @@ import (
 	"flag"
 	"fmt"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 	"io"
 	"math/rand"
+	"strings"
 	"sync"
 	"time"
 
@@ -83,13 +85,17 @@ func (c *commandEcEncode) Do(args []string, commandEnv *CommandEnv, writer io.Wr
 		return err
 	}
 	fmt.Printf("ec encode volumes: %v\n", volumeIds)
+
+	pool := util.NewPool(10)
 	for _, vid := range volumeIds {
-		if err = doEcEncode(commandEnv, *collection, vid, *parallelCopy); err != nil {
-			return err
-		}
+		thisWork := vid
+		pool.Run(func() error {
+			return doEcEncode(commandEnv, *collection, thisWork, *parallelCopy)
+		})
 	}
 
-	return nil
+	res := pool.Wait()
+	return util.MarshalErrors(res)
 }
 
 func doEcEncode(commandEnv *CommandEnv, collection string, vid needle.VolumeId, parallelCopy bool) (err error) {
@@ -123,7 +129,7 @@ func doEcEncode(commandEnv *CommandEnv, collection string, vid needle.VolumeId, 
 }
 
 func generateEcShards(grpcDialOption grpc.DialOption, volumeId needle.VolumeId, collection string, sourceVolumeServer pb.ServerAddress) error {
-
+	start := time.Now()
 	fmt.Printf("generateEcShards %s %d on %s ...\n", collection, volumeId, sourceVolumeServer)
 
 	err := operation.WithVolumeServerClient(false, sourceVolumeServer, grpcDialOption, func(volumeServerClient volume_server_pb.VolumeServerClient) error {
@@ -133,13 +139,13 @@ func generateEcShards(grpcDialOption grpc.DialOption, volumeId needle.VolumeId, 
 		})
 		return genErr
 	})
-
+	fmt.Printf("generateEcShards %s %d on %s cost %s ...\n", collection, volumeId, sourceVolumeServer, time.Now().Sub(start))
 	return err
 
 }
 
 func spreadEcShards(commandEnv *CommandEnv, volumeId needle.VolumeId, collection string, existingLocations []wdclient.Location, parallelCopy bool) (err error) {
-
+	start := time.Now()
 	allEcNodes, totalFreeEcSlots, err := collectEcNodes(commandEnv, "")
 	if err != nil {
 		return err
@@ -149,12 +155,13 @@ func spreadEcShards(commandEnv *CommandEnv, volumeId needle.VolumeId, collection
 		return fmt.Errorf("not enough free ec shard slots. only %d left", totalFreeEcSlots)
 	}
 	allocatedDataNodes := allEcNodes
-	if len(allocatedDataNodes) > erasure_coding.TotalShardsCount {
-		allocatedDataNodes = allocatedDataNodes[:erasure_coding.TotalShardsCount]
-	}
+	//if len(allocatedDataNodes) > erasure_coding.TotalShardsCount {
+	//	allocatedDataNodes = allocatedDataNodes[:erasure_coding.TotalShardsCount]
+	//}
 
 	// calculate how many shards to allocate for these servers
 	allocatedEcIds := balancedEcDistribution(allocatedDataNodes)
+	fmt.Printf("balancedEcDistribution %s %d cost %s ...\n", collection, volumeId, time.Now().Sub(start).String())
 
 	// ask the data nodes to copy from the source volume server
 	copiedShardIds, err := parallelCopyEcShardsFromSource(commandEnv.option.GrpcDialOption, allocatedDataNodes, allocatedEcIds, volumeId, collection, existingLocations[0], parallelCopy)
@@ -183,6 +190,7 @@ func spreadEcShards(commandEnv *CommandEnv, volumeId needle.VolumeId, collection
 		}
 	}
 
+	fmt.Printf("spreadEcShards %s %d cost %s ...\n", collection, volumeId, time.Now().Sub(start).String())
 	return err
 
 }
@@ -246,21 +254,61 @@ func parallelCopyEcShardsFromSource(grpcDialOption grpc.DialOption, targetServer
 	return
 }
 
+type EcNodeInfo struct {
+	Index int
+	*EcNode
+}
+
+func deviceEcNodesFromIP(servers []*EcNode) (nodes map[string][]EcNodeInfo) {
+	nodes = make(map[string][]EcNodeInfo)
+	for i := range servers {
+		if servers[i].info == nil {
+			nodes[""] = append(nodes[""], EcNodeInfo{
+				i,
+				servers[i],
+			})
+		}
+		ip := strings.Split(servers[i].info.Id, ":")[0]
+		nodes[ip] = append(nodes[ip], EcNodeInfo{
+			i,
+			servers[i],
+		})
+	}
+	return
+}
+
+// for ec shard balance from node, we don't want to store shard in same node, jump node every shard
+// ec shard 分布算法， 需要保证相邻的shard分布在不同节点上，并且要均匀的分布在节点的每个volume上，不能全在第一个volume上
 func balancedEcDistribution(servers []*EcNode) (allocated [][]uint32) {
+	ipNodes := deviceEcNodesFromIP(servers)
+	standardCountOfServer := len(servers) / len(ipNodes)
+
 	allocated = make([][]uint32, len(servers))
 	allocatedShardIdIndex := uint32(0)
-	serverIndex := rand.Intn(len(servers))
+
+	var tmpOffset int
+	var balanceIpIndex string
 	for allocatedShardIdIndex < erasure_coding.TotalShardsCount {
-		if servers[serverIndex].freeEcSlot > 0 {
-			allocated[serverIndex] = append(allocated[serverIndex], allocatedShardIdIndex)
+		for ip, v := range ipNodes {
+			rand.Seed(time.Now().UnixNano())
+			if len(v) < standardCountOfServer {
+				tmpOffset++
+				if tmpOffset%2 == 0 {
+					continue
+				}
+			}
+			thisNode := v[rand.Intn(len(v))]
+			allocated[thisNode.Index] = append(allocated[thisNode.Index], allocatedShardIdIndex)
+			balanceIpIndex += fmt.Sprintf("balance %d: ip %s, thisIndex %d\n", allocatedShardIdIndex, ip, thisNode.Index)
 			allocatedShardIdIndex++
-		}
-		serverIndex++
-		if serverIndex >= len(servers) {
-			serverIndex = 0
+
+			if allocatedShardIdIndex >= erasure_coding.TotalShardsCount {
+				break
+			}
 		}
 	}
 
+	fmt.Printf("ndebug: balancedEcDistribution, val: %v,\n %s", allocated, balanceIpIndex)
 	return allocated
 }
 

@@ -1,5 +1,5 @@
 BINARY = weed
-ldflags="-X 'github.com/seaweedfs/seaweedfs/weed/util.BuiltTime=$(shell date +%Y-%m-%d/%H:%M:%S)'"
+ldflags="-X 'github.com/seaweedfs/seaweedfs/weed/util.BuiltTime=$(shell date +%Y-%m-%d/%H:%M:%S)' -X 'github.com/seaweedfs/seaweedfs/weed/util.BuiltCommit=`git describe --all --long`'"
 
 SOURCE_DIR = .
 

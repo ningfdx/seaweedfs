@@ -184,6 +184,9 @@ func doUploadData(data []byte, option *UploadOption) (uploadResult *UploadResult
 			PairMap:           nil,
 			Jwt:               option.Jwt,
 		})
+		if err != nil {
+			return
+		}
 		if uploadResult == nil {
 			return
 		}
@@ -205,6 +208,9 @@ func doUploadData(data []byte, option *UploadOption) (uploadResult *UploadResult
 			PairMap:           option.PairMap,
 			Jwt:               option.Jwt,
 		})
+		if err != nil {
+			return
+		}
 		if uploadResult == nil {
 			return
 		}

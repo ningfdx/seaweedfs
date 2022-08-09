@@ -47,6 +47,7 @@ type Option struct {
 	Quota              int64
 	DisableXAttr       bool
 	ConcurrentLimit    int64
+	AuthKey            string
 
 	// if mount point is in quota-* format, then you can use these option
 	DirectoryQuotaSize  string
