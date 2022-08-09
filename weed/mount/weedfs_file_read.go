@@ -2,8 +2,8 @@ package mount
 
 import (
 	"context"
-	"github.com/chrislusf/seaweedfs/weed/glog"
 	"github.com/hanwen/go-fuse/v2/fuse"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"io"
 	"syscall"
 )
