@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const blockSize = 4096 * 4
+const blockSize = 512
 
 type statsCache struct {
 	filer_pb.StatisticsResponse

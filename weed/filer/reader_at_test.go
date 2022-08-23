@@ -1,7 +1,7 @@
 package filer
 
 import (
-	"fmt"
+	"bytes"
 	"io"
 	"math"
 	"strconv"
@@ -75,29 +75,28 @@ func TestReaderAt(t *testing.T) {
 		readerPattern: NewReaderPattern(),
 	}
 
-	testReadAt(t, readerAt, 0, 10, 10, io.EOF)
-	testReadAt(t, readerAt, 0, 12, 10, io.EOF)
-	testReadAt(t, readerAt, 2, 8, 8, io.EOF)
-	testReadAt(t, readerAt, 3, 6, 6, nil)
+	testReadAt(t, readerAt, 0, 10, 10, io.EOF, nil, nil)
+	testReadAt(t, readerAt, 0, 12, 12, io.EOF, nil, nil)
+	testReadAt(t, readerAt, 2, 8, 8, io.EOF, nil, nil)
+	testReadAt(t, readerAt, 3, 6, 6, nil, nil, nil)
 
 }
 
-func testReadAt(t *testing.T, readerAt *ChunkReadAt, offset int64, size int, expected int, expectedErr error) {
-	data := make([]byte, size)
+func testReadAt(t *testing.T, readerAt *ChunkReadAt, offset int64, size int, expectedN int, expectedErr error, data, expectedData []byte) {
+	if data == nil {
+		data = make([]byte, size)
+	}
 	n, err := readerAt.doReadAt(data, offset)
 
-	for _, d := range data {
-		fmt.Printf("%x", d)
-	}
-	fmt.Println()
-
-	if expected != n {
-		t.Errorf("unexpected read size: %d, expect: %d", n, expected)
+	if expectedN != n {
+		t.Errorf("unexpected read size: %d, expect: %d", n, expectedN)
 	}
 	if err != expectedErr {
 		t.Errorf("unexpected read error: %v, expect: %v", err, expectedErr)
 	}
-
+	if expectedData != nil && !bytes.Equal(data, expectedData) {
+		t.Errorf("unexpected read data: %v, expect: %v", data, expectedData)
+	}
 }
 
 func TestReaderAt0(t *testing.T) {
@@ -125,12 +124,12 @@ func TestReaderAt0(t *testing.T) {
 		readerPattern: NewReaderPattern(),
 	}
 
-	testReadAt(t, readerAt, 0, 10, 10, io.EOF)
-	testReadAt(t, readerAt, 3, 16, 7, io.EOF)
-	testReadAt(t, readerAt, 3, 5, 5, nil)
+	testReadAt(t, readerAt, 0, 10, 10, io.EOF, nil, nil)
+	testReadAt(t, readerAt, 3, 16, 7, io.EOF, nil, nil)
+	testReadAt(t, readerAt, 3, 5, 5, nil, nil, nil)
 
-	testReadAt(t, readerAt, 11, 5, 0, io.EOF)
-	testReadAt(t, readerAt, 10, 5, 0, io.EOF)
+	testReadAt(t, readerAt, 11, 5, 5, io.EOF, nil, nil)
+	testReadAt(t, readerAt, 10, 5, 5, io.EOF, nil, nil)
 
 }
 
@@ -153,96 +152,54 @@ func TestReaderAt1(t *testing.T) {
 		readerPattern: NewReaderPattern(),
 	}
 
-	testReadAt(t, readerAt, 0, 20, 20, io.EOF)
-	testReadAt(t, readerAt, 1, 7, 7, nil)
-	testReadAt(t, readerAt, 0, 1, 1, nil)
-	testReadAt(t, readerAt, 18, 4, 2, io.EOF)
-	testReadAt(t, readerAt, 12, 4, 4, nil)
-	testReadAt(t, readerAt, 4, 20, 16, io.EOF)
-	testReadAt(t, readerAt, 4, 10, 10, nil)
-	testReadAt(t, readerAt, 1, 10, 10, nil)
+	testReadAt(t, readerAt, 0, 20, 20, io.EOF, nil, nil)
+	testReadAt(t, readerAt, 1, 7, 7, nil, nil, nil)
+	testReadAt(t, readerAt, 0, 1, 1, nil, nil, nil)
+	testReadAt(t, readerAt, 18, 4, 2, io.EOF, nil, nil)
+	testReadAt(t, readerAt, 12, 4, 4, nil, nil, nil)
+	testReadAt(t, readerAt, 4, 20, 16, io.EOF, nil, nil)
+	testReadAt(t, readerAt, 4, 10, 10, nil, nil, nil)
+	testReadAt(t, readerAt, 1, 10, 10, nil, nil, nil)
 
 }
 
-func testReadAtWithMonitorReadAt(t *testing.T, readerAt *ChunkReadAt, offset int64, size int, expected int, expectedErr error) {
-	data := make([]byte, size)
-	n, err := readerAt.ReadAt(data, offset)
-
-	for _, d := range data {
-		fmt.Printf("%x", d)
-	}
-	fmt.Println()
-
-	if expected != n {
-		t.Errorf("unexpected read size: %d, expect: %d", n, expected)
-	}
-	if err != expectedErr {
-		t.Errorf("unexpected read error: %v, expect: %v", err, expectedErr)
-	}
-
-}
-
-func TestReaderAtRandomWithMonitorReadAt(t *testing.T) {
-
+func TestReaderAtGappedChunksDoNotLeak(t *testing.T) {
 	visibles := []VisibleInterval{
 		{
-			start:     0,
-			stop:      2,
-			fileId:    "1",
-			chunkSize: 2,
-		},
-		{
 			start:     2,
-			stop:      4,
-			fileId:    "3",
-			chunkSize: 2,
+			stop:      3,
+			fileId:    "1",
+			chunkSize: 5,
 		},
 		{
-			start:     4,
-			stop:      6,
-			fileId:    "5",
-			chunkSize: 2,
-		},
-		{
-			start:     6,
-			stop:      8,
-			fileId:    "7",
-			chunkSize: 2,
-		},
-		{
-			start:     8,
-			stop:      10,
-			fileId:    "9",
-			chunkSize: 2,
+			start:     7,
+			stop:      9,
+			fileId:    "1",
+			chunkSize: 4,
 		},
 	}
 
 	readerAt := &ChunkReadAt{
 		chunkViews:    ViewFromVisibleIntervals(visibles, 0, math.MaxInt64),
 		readerLock:    sync.Mutex{},
-		fileSize:      10,
+		fileSize:      9,
 		readerCache:   newReaderCache(3, &mockChunkCache{}, nil),
 		readerPattern: NewReaderPattern(),
 	}
 
-	testReadAt(t, readerAt, 0, 10, 10, io.EOF)
-	testReadAt(t, readerAt, 1, 45, 9, io.EOF)
-	testReadAt(t, readerAt, 42, 8, 0, io.EOF)
-	testReadAt(t, readerAt, 3, 6, 6, nil)
+	testReadAt(t, readerAt, 0, 9, 9, io.EOF, []byte{2, 2, 2, 2, 2, 2, 2, 2, 2}, []byte{0, 0, 1, 0, 0, 0, 0, 1, 1})
+	testReadAt(t, readerAt, 1, 8, 8, io.EOF, []byte{2, 2, 2, 2, 2, 2, 2, 2}, []byte{0, 1, 0, 0, 0, 0, 1, 1})
+}
 
-	// we don't implement rand read api in test, if c.readerPattern.IsRandomMode() == true, test should get this error
-	readerAt.readerPattern = NewReaderPattern()
-	testReadAtWithMonitorReadAt(t, readerAt, 2, 8, 0, ErrNilFuncNotPermitted)
-	testReadAtWithMonitorReadAt(t, readerAt, 8, 5, 2, io.EOF)
-	testReadAtWithMonitorReadAt(t, readerAt, 4, 6, 0, ErrNilFuncNotPermitted)
+func TestReaderAtSparseFileDoesNotLeak(t *testing.T) {
+	readerAt := &ChunkReadAt{
+		chunkViews:    ViewFromVisibleIntervals([]VisibleInterval{}, 0, math.MaxInt64),
+		readerLock:    sync.Mutex{},
+		fileSize:      3,
+		readerCache:   newReaderCache(3, &mockChunkCache{}, nil),
+		readerPattern: NewReaderPattern(),
+	}
 
-	testReadAtWithMonitorReadAt(t, readerAt, 2, 6, 0, ErrNilFuncNotPermitted)
-	testReadAtWithMonitorReadAt(t, readerAt, 3, 5, 5, nil)
-	testReadAtWithMonitorReadAt(t, readerAt, 0, 10, 0, ErrNilFuncNotPermitted)
-
-	readerAt.readerPattern = NewReaderPattern()
-	testReadAtWithMonitorReadAt(t, readerAt, 0, 10, 10, io.EOF)
-	testReadAtWithMonitorReadAt(t, readerAt, 2, 6, 6, nil)
-	testReadAtWithMonitorReadAt(t, readerAt, 2, 7, 7, nil)
-	testReadAtWithMonitorReadAt(t, readerAt, 1, 6, 0, ErrNilFuncNotPermitted)
+	testReadAt(t, readerAt, 0, 3, 3, io.EOF, []byte{2, 2, 2}, []byte{0, 0, 0})
+	testReadAt(t, readerAt, 1, 2, 2, io.EOF, []byte{2, 2}, []byte{0, 0})
 }
