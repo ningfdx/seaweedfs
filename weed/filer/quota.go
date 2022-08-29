@@ -83,6 +83,10 @@ func (f *Filer) runEventHandler(ch <-chan *event, persistCh chan map[util.FullPa
 	}
 }
 
+// handleQuotaPersist
+// TODO： quota存在机制性的问题， 多个filer实例出现在同一时刻操作同一目录的情况时，filer之间没有锁机制
+// 导致 filerA.size + 50, filerB.size-100，同步后只会保留最新的值，丢失+50 / -100，导致quota值错误
+// 修复方式，使用中心化Redis存储，所有节点quota信息记录在redis中，操作时用increase原子化操作即可
 func (f *Filer) handleQuotaPersist(persistCh chan map[util.FullPath]rootNodeAttr) {
 	for changes := range persistCh {
 		for node, val := range changes {
