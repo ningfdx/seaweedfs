@@ -34,6 +34,8 @@ var (
 )
 
 type Filer struct {
+	UniqueFilerId       int32
+	UniqueFilerEpoch    int32
 	Store               VirtualFilerStore
 	MasterClient        *wdclient.MasterClient
 	fileIdDeletionQueue *util.UnboundedQueue
@@ -47,9 +49,6 @@ type Filer struct {
 	Signature           int32
 	FilerConf           *FilerConf
 	RemoteStorage       *FilerRemoteStorage
-
-	UniqueFilerId    int32
-	UniqueFilerEpoch int32
 
 	eventCh            chan<- *event
 	cacheRootMutex     sync.RWMutex
@@ -105,7 +104,7 @@ func (f *Filer) MaybeBootstrapFromPeers(self pb.ServerAddress, existingNodes []*
 func (f *Filer) AggregateFromPeers(self pb.ServerAddress, existingNodes []*master_pb.ClusterNodeUpdate, startFrom time.Time) {
 
 	f.MetaAggregator = NewMetaAggregator(f, self, f.GrpcDialOption)
-	f.MasterClient.OnPeerUpdate = f.MetaAggregator.OnPeerUpdate
+	f.MasterClient.SetOnPeerUpdateFn(f.MetaAggregator.OnPeerUpdate)
 
 	for _, peerUpdate := range existingNodes {
 		f.MetaAggregator.OnPeerUpdate(peerUpdate, startFrom)

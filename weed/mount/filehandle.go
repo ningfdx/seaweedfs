@@ -1,12 +1,14 @@
 package mount
 
 import (
+	"sync"
+
+	"golang.org/x/exp/slices"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"golang.org/x/exp/slices"
-	"sync"
 )
 
 type FileHandleId uint64
@@ -57,15 +59,27 @@ func (fh *FileHandle) GetEntry() *filer_pb.Entry {
 	defer fh.entryLock.Unlock()
 	return fh.entry
 }
+
 func (fh *FileHandle) SetEntry(entry *filer_pb.Entry) {
 	fh.entryLock.Lock()
 	defer fh.entryLock.Unlock()
 	fh.entry = entry
 }
 
+func (fh *FileHandle) UpdateEntry(fn func(entry *filer_pb.Entry)) *filer_pb.Entry {
+	fh.entryLock.Lock()
+	defer fh.entryLock.Unlock()
+	fn(fh.entry)
+	return fh.entry
+}
+
 func (fh *FileHandle) AddChunks(chunks []*filer_pb.FileChunk) {
 	fh.entryLock.Lock()
 	defer fh.entryLock.Unlock()
+
+	if fh.entry == nil {
+		return
+	}
 
 	// find the earliest incoming chunk
 	newChunks := chunks
@@ -74,10 +88,6 @@ func (fh *FileHandle) AddChunks(chunks []*filer_pb.FileChunk) {
 		if lessThan(earliestChunk, newChunks[i]) {
 			earliestChunk = newChunks[i]
 		}
-	}
-
-	if fh.entry == nil {
-		return
 	}
 
 	// pick out-of-order chunks from existing chunks
@@ -100,7 +110,8 @@ func (fh *FileHandle) AddChunks(chunks []*filer_pb.FileChunk) {
 
 func (fh *FileHandle) CloseReader() {
 	if fh.reader != nil {
-		fh.reader.Close()
+		_ = fh.reader.Close()
+		fh.reader = nil
 	}
 }
 

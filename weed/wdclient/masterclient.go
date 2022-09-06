@@ -3,9 +3,11 @@ package wdclient
 import (
 	"context"
 	"fmt"
-	"github.com/seaweedfs/seaweedfs/weed/stats"
 	"math/rand"
+	"sync"
 	"time"
+
+	"github.com/seaweedfs/seaweedfs/weed/stats"
 
 	"github.com/seaweedfs/seaweedfs/weed/util"
 	"google.golang.org/grpc"
@@ -16,18 +18,19 @@ import (
 )
 
 type MasterClient struct {
-	FilerGroup     string
-	clientType     string
-	clientHost     pb.ServerAddress
-	rack           string
-	currentMaster  pb.ServerAddress
-	masters        map[string]pb.ServerAddress
-	grpcDialOption grpc.DialOption
+	FilerGroup        string
+	clientType        string
+	clientHost        pb.ServerAddress
+	rack              string
+	currentMaster     pb.ServerAddress
+	currentMasterLock sync.RWMutex
+	masters           map[string]pb.ServerAddress
+	grpcDialOption    grpc.DialOption
 
-	vidMap
-	vidMapCacheSize int
-
-	OnPeerUpdate func(update *master_pb.ClusterNodeUpdate, startFrom time.Time)
+	*vidMap
+	vidMapCacheSize  int
+	OnPeerUpdate     func(update *master_pb.ClusterNodeUpdate, startFrom time.Time)
+	OnPeerUpdateLock sync.RWMutex
 }
 
 func NewMasterClient(grpcDialOption grpc.DialOption, filerGroup string, clientType string, clientHost pb.ServerAddress, clientDataCenter string, rack string, masters map[string]pb.ServerAddress) *MasterClient {
@@ -43,6 +46,12 @@ func NewMasterClient(grpcDialOption grpc.DialOption, filerGroup string, clientTy
 	}
 }
 
+func (mc *MasterClient) SetOnPeerUpdateFn(onPeerUpdate func(update *master_pb.ClusterNodeUpdate, startFrom time.Time)) {
+	mc.OnPeerUpdateLock.Lock()
+	mc.OnPeerUpdate = onPeerUpdate
+	mc.OnPeerUpdateLock.Unlock()
+}
+
 func (mc *MasterClient) GetLookupFileIdFunction() LookupFileIdFunctionType {
 	return mc.LookupFileIdWithFallback
 }
@@ -52,12 +61,12 @@ func (mc *MasterClient) LookupFileIdWithFallback(fileId string) (fullUrls []stri
 	if err == nil && len(fullUrls) > 0 {
 		return
 	}
-	err = pb.WithMasterClient(false, mc.currentMaster, mc.grpcDialOption, func(client master_pb.SeaweedClient) error {
+	err = pb.WithMasterClient(false, mc.GetMaster(), mc.grpcDialOption, false, func(client master_pb.SeaweedClient) error {
 		resp, err := client.LookupVolume(context.Background(), &master_pb.LookupVolumeRequest{
 			VolumeOrFileIds: []string{fileId},
 		})
 		if err != nil {
-			return fmt.Errorf("LookupVolume failed: %v", err)
+			return fmt.Errorf("LookupVolume %s failed: %v", fileId, err)
 		}
 		for vid, vidLocation := range resp.VolumeIdLocations {
 			for _, vidLoc := range vidLocation.Locations {
@@ -82,9 +91,21 @@ func (mc *MasterClient) LookupFileIdWithFallback(fileId string) (fullUrls []stri
 	return
 }
 
+func (mc *MasterClient) getCurrentMaster() pb.ServerAddress {
+	mc.currentMasterLock.RLock()
+	defer mc.currentMasterLock.RUnlock()
+	return mc.currentMaster
+}
+
+func (mc *MasterClient) setCurrentMaster(master pb.ServerAddress) {
+	mc.currentMasterLock.Lock()
+	mc.currentMaster = master
+	mc.currentMasterLock.Unlock()
+}
+
 func (mc *MasterClient) GetMaster() pb.ServerAddress {
 	mc.WaitUntilConnected()
-	return mc.currentMaster
+	return mc.getCurrentMaster()
 }
 
 func (mc *MasterClient) GetMasters() map[string]pb.ServerAddress {
@@ -94,7 +115,7 @@ func (mc *MasterClient) GetMasters() map[string]pb.ServerAddress {
 
 func (mc *MasterClient) WaitUntilConnected() {
 	for {
-		if mc.currentMaster != "" {
+		if mc.getCurrentMaster() != "" {
 			return
 		}
 		time.Sleep(time.Duration(rand.Int31n(200)) * time.Millisecond)
@@ -114,7 +135,7 @@ func (mc *MasterClient) FindLeaderFromOtherPeers(myMasterAddress pb.ServerAddres
 		if master == myMasterAddress {
 			continue
 		}
-		if grpcErr := pb.WithMasterClient(false, master, mc.grpcDialOption, func(client master_pb.SeaweedClient) error {
+		if grpcErr := pb.WithMasterClient(false, master, mc.grpcDialOption, false, func(client master_pb.SeaweedClient) error {
 			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Millisecond)
 			defer cancel()
 			resp, err := client.GetMasterConfiguration(ctx, &master_pb.GetMasterConfigurationRequest{})
@@ -142,15 +163,14 @@ func (mc *MasterClient) tryAllMasters() {
 		for nextHintedLeader != "" {
 			nextHintedLeader = mc.tryConnectToMaster(nextHintedLeader)
 		}
-
-		mc.currentMaster = ""
+		mc.setCurrentMaster("")
 	}
 }
 
 func (mc *MasterClient) tryConnectToMaster(master pb.ServerAddress) (nextHintedLeader pb.ServerAddress) {
 	glog.V(1).Infof("%s.%s masterClient Connecting to master %v", mc.FilerGroup, mc.clientType, master)
 	stats.MasterClientConnectCounter.WithLabelValues("total").Inc()
-	gprcErr := pb.WithMasterClient(true, master, mc.grpcDialOption, func(client master_pb.SeaweedClient) error {
+	gprcErr := pb.WithMasterClient(true, master, mc.grpcDialOption, false, func(client master_pb.SeaweedClient) error {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -195,7 +215,7 @@ func (mc *MasterClient) tryConnectToMaster(master pb.ServerAddress) (nextHintedL
 		} else {
 			mc.resetVidMap()
 		}
-		mc.currentMaster = master
+		mc.setCurrentMaster(master)
 
 		for {
 			resp, err := stream.Recv()
@@ -207,8 +227,8 @@ func (mc *MasterClient) tryConnectToMaster(master pb.ServerAddress) (nextHintedL
 
 			if resp.VolumeLocation != nil {
 				// maybe the leader is changed
-				if resp.VolumeLocation.Leader != "" && string(mc.currentMaster) != resp.VolumeLocation.Leader {
-					glog.V(0).Infof("currentMaster %v redirected to leader %v", mc.currentMaster, resp.VolumeLocation.Leader)
+				if resp.VolumeLocation.Leader != "" && string(mc.GetMaster()) != resp.VolumeLocation.Leader {
+					glog.V(0).Infof("currentMaster %v redirected to leader %v", mc.GetMaster(), resp.VolumeLocation.Leader)
 					nextHintedLeader = pb.ServerAddress(resp.VolumeLocation.Leader)
 					stats.MasterClientConnectCounter.WithLabelValues(stats.RedirectedToLeader).Inc()
 					return nil
@@ -218,6 +238,7 @@ func (mc *MasterClient) tryConnectToMaster(master pb.ServerAddress) (nextHintedL
 
 			if resp.ClusterNodeUpdate != nil {
 				update := resp.ClusterNodeUpdate
+				mc.OnPeerUpdateLock.RLock()
 				if mc.OnPeerUpdate != nil {
 					if update.FilerGroup == mc.FilerGroup {
 						if update.IsAdd {
@@ -229,6 +250,7 @@ func (mc *MasterClient) tryConnectToMaster(master pb.ServerAddress) (nextHintedL
 						mc.OnPeerUpdate(update, time.Now())
 					}
 				}
+				mc.OnPeerUpdateLock.RUnlock()
 			}
 		}
 	})
@@ -268,10 +290,7 @@ func (mc *MasterClient) updateVidMap(resp *master_pb.KeepConnectedResponse) {
 
 func (mc *MasterClient) WithClient(streamingMode bool, fn func(client master_pb.SeaweedClient) error) error {
 	return util.Retry("master grpc", func() error {
-		for mc.currentMaster == "" {
-			time.Sleep(3 * time.Second)
-		}
-		return pb.WithMasterClient(streamingMode, mc.currentMaster, mc.grpcDialOption, func(client master_pb.SeaweedClient) error {
+		return pb.WithMasterClient(streamingMode, mc.GetMaster(), mc.grpcDialOption, false, func(client master_pb.SeaweedClient) error {
 			return fn(client)
 		})
 	})
@@ -284,9 +303,12 @@ func (mc *MasterClient) resetVidMap() {
 		DataCenter:      mc.DataCenter,
 		cache:           mc.cache,
 	}
-	mc.vidMap = newVidMap(mc.DataCenter)
-	mc.vidMap.cache = tail
 
+	nvm := newVidMap(mc.DataCenter)
+	nvm.cache = tail
+	mc.vidMap = nvm
+
+	//trim
 	for i := 0; i < mc.vidMapCacheSize && tail.cache != nil; i++ {
 		if i == mc.vidMapCacheSize-1 {
 			tail.cache = nil

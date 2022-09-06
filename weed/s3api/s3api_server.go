@@ -28,7 +28,7 @@ type S3ApiServerOption struct {
 	GrpcDialOption            grpc.DialOption
 	AllowEmptyFolder          bool
 	AllowDeleteBucketNotEmpty bool
-	LocalFilerSocket          *string
+	LocalFilerSocket          string
 	DataCenter                string
 }
 
@@ -59,7 +59,7 @@ func NewS3ApiServer(router *mux.Router, option *S3ApiServerOption) (s3ApiServer 
 		filerGuard:     security.NewGuard([]string{}, signingKey, expiresAfterSec, readSigningKey, readExpiresAfterSec),
 		cb:             NewCircuitBreaker(option),
 	}
-	if option.LocalFilerSocket == nil || *option.LocalFilerSocket == "" {
+	if option.LocalFilerSocket == "" {
 		s3ApiServer.client = &http.Client{Transport: &http.Transport{
 			MaxIdleConns:        1024,
 			MaxIdleConnsPerHost: 1024,
@@ -68,7 +68,7 @@ func NewS3ApiServer(router *mux.Router, option *S3ApiServerOption) (s3ApiServer 
 		s3ApiServer.client = &http.Client{
 			Transport: &http.Transport{
 				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-					return net.Dial("unix", *option.LocalFilerSocket)
+					return net.Dial("unix", option.LocalFilerSocket)
 				},
 			},
 		}
@@ -88,9 +88,11 @@ func (s3a *S3ApiServer) registerRouter(router *mux.Router) {
 	apiRouter.Methods("GET").Path("/status").HandlerFunc(s3a.StatusHandler)
 
 	apiRouter.Methods("OPTIONS").HandlerFunc(
-		func(w http.ResponseWriter, r *http.Request){
+		func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
-			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Access-Control-Expose-Headers", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "*")
+			w.Header().Set("Access-Control-Allow-Headers", "*")
 			writeSuccessResponseEmpty(w, r)
 		})
 

@@ -52,19 +52,20 @@ func (fs *FilerServer) uploadReaderToChunks(w http.ResponseWriter, r *http.Reque
 	var bytesBufferCounter int64
 	bytesBufferLimitCond := sync.NewCond(new(sync.Mutex))
 	var fileChunksLock sync.Mutex
+	var uploadErrLock sync.Mutex
 	for {
 
 		// need to throttle used byte buffer
 		bytesBufferLimitCond.L.Lock()
 		for atomic.LoadInt64(&bytesBufferCounter) >= 4 {
-			glog.V(4).Infof("waiting for byte buffer %d", bytesBufferCounter)
+			glog.V(4).Infof("waiting for byte buffer %d", atomic.LoadInt64(&bytesBufferCounter))
 			bytesBufferLimitCond.Wait()
 		}
 		atomic.AddInt64(&bytesBufferCounter, 1)
 		bytesBufferLimitCond.L.Unlock()
 
 		bytesBuffer := bufPool.Get().(*bytes.Buffer)
-		glog.V(4).Infof("received byte buffer %d", bytesBufferCounter)
+		glog.V(4).Infof("received byte buffer %d", atomic.LoadInt64(&bytesBufferCounter))
 
 		limitedReader := io.LimitReader(partReader, int64(chunkSize))
 
@@ -77,7 +78,9 @@ func (fs *FilerServer) uploadReaderToChunks(w http.ResponseWriter, r *http.Reque
 			bufPool.Put(bytesBuffer)
 			atomic.AddInt64(&bytesBufferCounter, -1)
 			bytesBufferLimitCond.Signal()
+			uploadErrLock.Lock()
 			uploadErr = err
+			uploadErrLock.Unlock()
 			break
 		}
 		if chunkOffset == 0 && !isAppend {
@@ -106,13 +109,18 @@ func (fs *FilerServer) uploadReaderToChunks(w http.ResponseWriter, r *http.Reque
 
 			chunk, toChunkErr := fs.dataToChunk(fileName, contentType, bytesBuffer.Bytes(), offset, so)
 			if toChunkErr != nil {
-				uploadErr = toChunkErr
+				uploadErrLock.Lock()
+				if uploadErr == nil {
+					uploadErr = toChunkErr
+				}
+				uploadErrLock.Unlock()
 			}
 			if chunk != nil {
 				fileChunksLock.Lock()
 				fileChunks = append(fileChunks, chunk)
+				fileChunksSize := len(fileChunks)
 				fileChunksLock.Unlock()
-				glog.V(4).Infof("uploaded %s chunk %d to %s [%d,%d)", fileName, len(fileChunks), chunk.FileId, offset, offset+int64(chunk.Size))
+				glog.V(4).Infof("uploaded %s chunk %d to %s [%d,%d)", fileName, fileChunksSize, chunk.FileId, offset, offset+int64(chunk.Size))
 			}
 		}(chunkOffset)
 
