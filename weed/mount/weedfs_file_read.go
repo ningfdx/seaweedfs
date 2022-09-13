@@ -47,8 +47,8 @@ func (wfs *WFS) Read(cancel <-chan struct{}, in *fuse.ReadIn, buff []byte) (fuse
 		return nil, fuse.ENOENT
 	}
 
-	fh.Lock()
-	defer fh.Unlock()
+	fh.orderedMutex.Acquire(context.Background(), 1)
+	defer fh.orderedMutex.Release(1)
 
 	offset := int64(in.Offset)
 	totalRead, err := readDataByFileHandle(buff, fh, offset)
