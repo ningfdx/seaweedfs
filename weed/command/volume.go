@@ -67,6 +67,7 @@ type VolumeServerOptions struct {
 	// pulseSeconds          *int
 	inflightUploadDataTimeout *time.Duration
 	hasSlowRead               *bool
+	readBufferSizeMB          *int
 }
 
 func init() {
@@ -97,7 +98,8 @@ func init() {
 	v.metricsHttpPort = cmdVolume.Flag.Int("metricsPort", 0, "Prometheus metrics listen port")
 	v.idxFolder = cmdVolume.Flag.String("dir.idx", "", "directory to store .idx files")
 	v.inflightUploadDataTimeout = cmdVolume.Flag.Duration("inflightUploadDataTimeout", 60*time.Second, "inflight upload data wait timeout of volume servers")
-	v.hasSlowRead = cmdVolume.Flag.Bool("hasSlowRead", false, "if true, this prevents slow reads from blocking other requests, but large file read P99 latency will increase.")
+	v.hasSlowRead = cmdVolume.Flag.Bool("hasSlowRead", false, "<experimental> if true, this prevents slow reads from blocking other requests, but large file read P99 latency will increase.")
+	v.readBufferSizeMB = cmdVolume.Flag.Int("readBufferSizeMB", 4, "<experimental> larger values can optimize query performance but will increase some memory usage,Use with hasSlowRead normally.")
 }
 
 var cmdVolume = &Command{
@@ -246,6 +248,7 @@ func (v VolumeServerOptions) startVolumeServer(volumeFolders, maxVolumeCounts, v
 		int64(*v.concurrentDownloadLimitMB)*1024*1024,
 		*v.inflightUploadDataTimeout,
 		*v.hasSlowRead,
+		*v.readBufferSizeMB,
 	)
 	// starting grpc server
 	grpcS := v.startGrpcService(volumeServer)

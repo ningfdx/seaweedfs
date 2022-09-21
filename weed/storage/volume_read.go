@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/seaweedfs/seaweedfs/weed/util/mem"
 	"io"
-	"sync"
 	"time"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
@@ -136,7 +135,7 @@ func (v *Volume) readNeedleDataInto(n *needle.Needle, readOption *ReadOption, wr
 		actualOffset += int64(MaxPossibleVolumeSize)
 	}
 
-	buf := mem.Allocate(min(1024*1024, int(size)))
+	buf := mem.Allocate(min(readOption.ReadBufferSize, int(size)))
 	defer mem.Free(buf)
 
 	// read needle data
@@ -188,14 +187,6 @@ func (v *Volume) readNeedleDataInto(n *needle.Needle, readOption *ReadOption, wr
 	}
 	return nil
 
-}
-
-func synchronizedRead(rwLock *sync.RWMutex, enabled bool, closure func() error) error {
-	if enabled {
-		rwLock.RLock()
-		defer rwLock.RUnlock()
-	}
-	return closure()
 }
 
 func min(x, y int) int {
