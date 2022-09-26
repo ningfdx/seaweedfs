@@ -10,7 +10,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"google.golang.org/grpc"
@@ -50,13 +49,12 @@ type Filer struct {
 	FilerConf           *FilerConf
 	RemoteStorage       *FilerRemoteStorage
 
-	eventCh            chan<- *event
-	cacheRootMutex     sync.RWMutex
-	cacheRootNodeEntry map[util.FullPath]*Entry
+	quotaPlugin *QuotaPlugin
+	eventCh     chan<- *event
 }
 
 func NewFiler(masters map[string]pb.ServerAddress, grpcDialOption grpc.DialOption, filerHost pb.ServerAddress,
-	filerGroup string, collection string, replication string, dataCenter string, notifyFn func()) *Filer {
+	filerGroup string, collection string, replication string, dataCenter string, notifyFn func(), quotaPlugin *QuotaPlugin) *Filer {
 	f := &Filer{
 		MasterClient:        wdclient.NewMasterClient(grpcDialOption, filerGroup, cluster.FilerType, filerHost, dataCenter, "", masters),
 		fileIdDeletionQueue: util.NewUnboundedQueue(),
@@ -64,7 +62,7 @@ func NewFiler(masters map[string]pb.ServerAddress, grpcDialOption grpc.DialOptio
 		FilerConf:           NewFilerConf(),
 		RemoteStorage:       NewFilerRemoteStorage(),
 		UniqueFilerId:       util.RandomInt32(),
-		cacheRootNodeEntry:  make(map[util.FullPath]*Entry),
+		quotaPlugin:         quotaPlugin,
 	}
 	if f.UniqueFilerId < 0 {
 		f.UniqueFilerId = -f.UniqueFilerId
@@ -222,43 +220,24 @@ func (f *Filer) CreateEntry(ctx context.Context, entry *Entry, o_excl bool, isFr
 	return nil
 }
 
-func (f *Filer) getRootNodeQuotaCache(p util.FullPath) (entry *Entry) {
-	f.cacheRootMutex.RLock()
-	defer f.cacheRootMutex.RUnlock()
-	return f.cacheRootNodeEntry[p]
-}
-
-func (f *Filer) updateRootNodeQuotaCache(entry *Entry) {
-	glog.V(4).Infof("cache update of %s", entry.FullPath)
-	f.cacheRootMutex.Lock()
-	defer f.cacheRootMutex.Unlock()
-	f.cacheRootNodeEntry[entry.FullPath] = entry
-}
-
-func (f *Filer) deleteRootNodeQuotaCache(entry *Entry) {
-	glog.V(4).Infof("cache delete of %s", entry.FullPath)
-	f.cacheRootMutex.Lock()
-	defer f.cacheRootMutex.Unlock()
-	delete(f.cacheRootNodeEntry, entry.FullPath)
-}
-
 func (f *Filer) checkInodeQuota(ctx context.Context, entry *Entry) error {
 	exist, rootNodePath := entry.FullPath.GetRootDir()
 	if !exist {
 		return nil
 	}
 
-	rootEntry := f.getRootNodeQuotaCache(rootNodePath)
-	if rootEntry == nil {
-		var err error
-		rootEntry, err = f.FindEntry(ctx, rootNodePath)
-		if err != nil {
-			return errors.Wrap(err, QuotaErrorPrefix+" parent node not found")
-		}
+	quotaSize, quotaInode, size, inode, err := f.quotaPlugin.GetAll(rootNodePath.Name())
+	if err != nil {
+		return errors.Wrapf(err, "get quota info of %s failed", rootNodePath)
 	}
-	if rootEntry.GetXAttrInodeQuota() < 1+rootEntry.GetXAttrInodeCount() {
-		glog.V(4).Infof("inode info of %s: %d/%d", entry.FullPath, rootEntry.GetXAttrInodeCount(), rootEntry.GetXAttrInodeQuota())
-		return fmt.Errorf(QuotaErrorPrefix+" insert entry %s : inode count should be less than %d, now is %d", entry.FullPath, rootEntry.GetXAttrInodeQuota(), rootEntry.GetXAttrInodeCount()+1)
+	if quotaInode < inode+1 {
+		glog.V(4).Infof("inode info of %s: %d/%d", rootNodePath, inode, quotaInode)
+		return fmt.Errorf(QuotaErrorPrefix+" insert entry %s : inode count should be less than %d, now is %d", rootNodePath, quotaInode, inode)
+	}
+
+	if quotaSize < size+1 {
+		glog.V(4).Infof("size info of %s: %d/%d", rootNodePath, size, quotaSize)
+		return fmt.Errorf(QuotaErrorPrefix+" insert entry %s : size count should be less than %d, now is %d", rootNodePath, quotaSize, size)
 	}
 
 	return nil
@@ -323,11 +302,23 @@ func (f *Filer) ensureParentDirectoryEntry(ctx context.Context, entry *Entry, di
 func (f *Filer) UpdateEntry(ctx context.Context, oldEntry, entry *Entry) (err error) {
 	if entry != nil {
 		if entry.FullPath.IsQuotaRootNode() {
-			f.updateRootNodeQuotaCache(entry)
-		}
-	} else if oldEntry != nil {
-		if oldEntry.FullPath.IsQuotaRootNode() {
-			f.deleteRootNodeQuotaCache(oldEntry)
+			qs, qi, _, _, err := f.quotaPlugin.GetAll(entry.Name())
+			if err != nil {
+				glog.Errorf("get entry of %s failed: %s", entry.Name(), err.Error())
+				return filer_pb.ErrNotFound
+			}
+			glog.V(2).Infof("update entry: %s %v", entry.FullPath, *entry)
+			newSizeQuota := int64(entry.GetXAttrSizeQuota())
+			newInodeQuota := int64(entry.GetXAttrInodeQuota())
+			if newInodeQuota != qi {
+				f.quotaPlugin.QuotaInodeSet(entry.Name(), newInodeQuota)
+			}
+			if newSizeQuota != qs {
+				f.quotaPlugin.QuotaSizeSet(entry.Name(), newSizeQuota)
+			}
+
+			entry.SetXAttrSizeQuota(newSizeQuota)
+			entry.SetXAttrInodeCountQuota(newInodeQuota)
 		}
 	}
 
@@ -364,14 +355,6 @@ func (f *Filer) FindEntry(ctx context.Context, p util.FullPath) (entry *Entry, e
 		return Root, nil
 	}
 
-	isRootNode := p.IsQuotaRootNode()
-	if isRootNode {
-		if entry = f.getRootNodeQuotaCache(p); entry != nil {
-			glog.V(4).Infof("cache point of %s", p)
-			return
-		}
-	}
-
 	entry, err = f.Store.FindEntry(ctx, p)
 	if entry != nil && entry.TtlSec > 0 {
 		if entry.Crtime.Add(time.Duration(entry.TtlSec) * time.Second).Before(time.Now()) {
@@ -380,10 +363,20 @@ func (f *Filer) FindEntry(ctx context.Context, p util.FullPath) (entry *Entry, e
 		}
 	}
 
+	isRootNode := p.IsQuotaRootNode()
 	if entry != nil && isRootNode {
-		glog.V(4).Infof("cache add of %s", p)
-		f.updateRootNodeQuotaCache(entry)
+		qs, qi, s, i, err := f.quotaPlugin.GetAll(p.Name())
+		if err != nil {
+			glog.Errorf("get entry of %s failed: %s", p.Name(), err.Error())
+			return nil, filer_pb.ErrNotFound
+		}
+
+		entry.SetXAttrSizeQuota(qs)
+		entry.SetXAttrSize(s)
+		entry.SetXAttrInodeCountQuota(qi)
+		entry.SetXAttrInodeCount(i)
 	}
+
 	return
 
 }

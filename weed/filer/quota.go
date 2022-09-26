@@ -1,7 +1,6 @@
 package filer
 
 import (
-	"context"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
@@ -94,27 +93,18 @@ func (f *Filer) handleQuotaPersist(persistCh chan map[util.FullPath]rootNodeAttr
 				continue
 			}
 
-			entry, err := f.FindEntry(context.Background(), node)
-			if err != nil {
-				glog.Errorf("find entry of %s failed: %s", node, err.Error())
-				continue
-			}
-			glog.V(4).Infof("find entry of %s, used_size: %d", node, entry.GetXAttrSize())
-
-			usedSize := int64(entry.GetXAttrSize()) + val.sizeChanged
-			entry.SetXAttrSize(usedSize)
-
-			inodeCount := int64(entry.GetXAttrInodeCount()) + val.inodeCountChanged
-			entry.SetXAttrInodeCount(inodeCount)
-
-			err = f.UpdateEntry(context.Background(), nil, entry)
+			usedSize, err := f.quotaPlugin.SizeIncrement(node.Name(), val.sizeChanged)
 			if err != nil {
 				glog.Errorf("update entry of %s failed: %s", node, err.Error())
 				continue
 			}
-			f.NotifyUpdateEvent(context.Background(), entry, entry, false, false, []int32{util.RandomInt32()})
+			usedInode, err := f.quotaPlugin.InodeIncrement(node.Name(), val.inodeCountChanged)
+			if err != nil {
+				glog.Errorf("update entry of %s failed: %s", node, err.Error())
+				continue
+			}
 
-			glog.V(4).Infof("handleQuotaPersist of %s changed: size %d, inode %d, used_size: %d", node, val.sizeChanged, val.inodeCountChanged, usedSize)
+			glog.V(4).Infof("handleQuotaPersist of %s changed: size %d, inode %d, used_size: %d, used_inode: %d", node, val.sizeChanged, val.inodeCountChanged, usedSize, usedInode)
 		}
 	}
 }

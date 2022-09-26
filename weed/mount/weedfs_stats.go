@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/hanwen/go-fuse/v2/fuse"
+	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
@@ -24,16 +25,17 @@ func (wfs *WFS) StatFs(cancel <-chan struct{}, in *fuse.InHeader, out *fuse.Stat
 
 	rootDir := util.FullPath(wfs.option.FilerMountRootPath)
 	if rootDir.IsQuotaRootNode() {
-		cachedRootEntry, cacheErr := wfs.metaCache.FindEntry(context.Background(), rootDir)
-		glog.V(4).Infof("reading fs stats of %s， cache is nil: %v", rootDir, cachedRootEntry == nil)
-		if cacheErr == filer_pb.ErrNotFound {
-			return fuse.OK
+		rootEntry, err := filer_pb.GetEntry(wfs, rootDir)
+		if err != nil {
+			glog.V(1).Infof("dir GetEntry %s: %v", rootDir, err)
+			return fuse.ENOENT
 		}
+		localEntry := filer.FromPbEntry(string(rootDir), rootEntry)
 
-		totalDiskSize := cachedRootEntry.GetXAttrSizeQuota()
-		usedDiskSize := cachedRootEntry.GetXAttrSize()
-		totalFileCount := cachedRootEntry.GetXAttrInodeQuota()
-		actualFileCount := cachedRootEntry.GetXAttrInodeCount()
+		totalDiskSize := localEntry.GetXAttrSizeQuota()
+		usedDiskSize := localEntry.GetXAttrSize()
+		totalFileCount := localEntry.GetXAttrInodeQuota()
+		actualFileCount := localEntry.GetXAttrInodeCount()
 
 		glog.V(4).Infof("reading fs stats value: totalDiskSize %v ", totalDiskSize)
 		glog.V(4).Infof("reading fs stats value: usedDiskSize %v ", usedDiskSize)

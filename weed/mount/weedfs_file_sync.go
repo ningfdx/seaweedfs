@@ -116,6 +116,11 @@ func (wfs *WFS) doFlush(fh *FileHandle, uid, gid uint32) fuse.Status {
 		return fuse.Status(syscall.ENOSPC)
 	}
 
+	wfs.writingPathMapMutex.Lock()
+	glog.V(4).Infof("delete writing size of %s", fileFullPath)
+	delete(wfs.writingPathMap, string(fh.FullPath()))
+	wfs.writingPathMapMutex.Unlock()
+
 	err := wfs.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 
 		fh.entryLock.Lock()

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -91,6 +92,12 @@ type WFS struct {
 	writeLimiter      *rate.Limiter
 	readLimiter       *rate.Limiter
 	gcCh              chan struct{}
+
+	rootPathQuotaMapMutex sync.Mutex
+	rootPathQuotaMap      map[string]filer.QuotaInfo
+
+	writingPathMapMutex sync.Mutex
+	writingPathMap      map[string]uint64
 }
 
 func NewSeaweedFileSystem(option *Option) *WFS {
@@ -109,6 +116,9 @@ func NewSeaweedFileSystem(option *Option) *WFS {
 		writeLimiter:    util.NewLimiter(int(concurrentLimit) * 52 * util.MBpsLimit),
 		readLimiter:     util.NewLimiter(int(concurrentLimit) * 104 * util.MBpsLimit),
 		gcCh:            make(chan struct{}, 5),
+
+		rootPathQuotaMap: make(map[string]filer.QuotaInfo),
+		writingPathMap:   make(map[string]uint64),
 	}
 
 	wfs.option.filerIndex = int32(rand.Intn(len(option.FilerAddresses)))
@@ -222,6 +232,7 @@ func (wfs *WFS) prepareRootCache() (*filer_pb.Entry, error) {
 					Crtime:   time.Now().Unix(),
 					FileMode: uint32(os.ModeDir) | 0755,
 				},
+				Extended: rootEntry.Extended,
 			}
 		}
 

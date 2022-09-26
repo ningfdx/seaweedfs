@@ -8,6 +8,7 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"net/http"
 	"syscall"
+	"time"
 )
 
 /**
@@ -56,20 +57,36 @@ func (wfs *WFS) Write(cancel <-chan struct{}, in *fuse.WriteIn, data []byte) (wr
 
 	exist, rootDir := fh.FullPath().GetRootDir()
 	if exist {
-		cachedRootEntry, cacheErr := wfs.metaCache.FindEntry(context.Background(), rootDir)
-		if cacheErr == filer_pb.ErrNotFound {
-			return 0, fuse.ENOENT
+		wfs.rootPathQuotaMapMutex.Lock()
+		quotaInfo, ok := wfs.rootPathQuotaMap[rootDir.Name()]
+		if !ok || quotaInfo.UpdatedAt.Add(time.Second*10).Before(time.Now()) {
+			rootEntry, err := filer_pb.GetEntry(wfs, rootDir)
+			if err != nil {
+				glog.V(1).Infof("dir GetEntry %s: %v", rootDir, err)
+				return 0, fuse.ENOENT
+			}
+			localEntry := filer.FromPbEntry(string(rootDir), rootEntry)
+			quotaInfo = filer.QuotaInfo{
+				QuotaSize:  localEntry.GetXAttrSizeQuota(),
+				Size:       localEntry.GetXAttrSize(),
+				QuotaInode: localEntry.GetXAttrInodeQuota(),
+				Inode:      localEntry.GetXAttrInodeCount(),
+				UpdatedAt:  time.Now(),
+			}
+
+			wfs.rootPathQuotaMap[rootDir.Name()] = quotaInfo
 		}
-		quotaSize := cachedRootEntry.GetXAttrSizeQuota()
-		usedSize := cachedRootEntry.GetXAttrSize()
-		glog.V(4).Infof("%v Write, quota %s: %s/%s", fh.FullPath(), rootDir, cachedRootEntry.Extended[XATTR_PREFIX+filer.Size_Key], cachedRootEntry.Extended[XATTR_PREFIX+filer.Size_Quota_Key])
-		glog.V(4).Infof("%v Write, quota %s: %d/%d", fh.FullPath(), rootDir, usedSize, quotaSize)
-		if quotaSize < uint64(len(data))+usedSize {
+		wfs.rootPathQuotaMapMutex.Unlock()
+
+		wfs.writingPathMapMutex.Lock()
+		writingSize := wfs.writingPathMap[string(fh.FullPath())] + uint64(len(data))
+		wfs.writingPathMap[string(fh.FullPath())] = writingSize
+		wfs.writingPathMapMutex.Unlock()
+
+		glog.V(4).Infof("%v Write %d, quota %s: qs %d; s %d; qi %d; i %d, writing: %d", fh.FullPath(), len(data), rootDir, quotaInfo.QuotaSize, quotaInfo.Size, quotaInfo.QuotaInode, quotaInfo.Inode, writingSize)
+		if quotaInfo.QuotaSize < quotaInfo.Size+writingSize {
 			return 0, fuse.Status(syscall.EDQUOT)
 		}
-
-		cachedRootEntry.SetXAttrSize(int64(usedSize + uint64(len(data))))
-		wfs.metaCache.UpdateEntry(context.Background(), cachedRootEntry)
 	}
 
 	fh.dirtyPages.writerPattern.MonitorWriteAt(int64(in.Offset), int(in.Size))

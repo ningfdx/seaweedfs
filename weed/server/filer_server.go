@@ -3,6 +3,7 @@ package weed_server
 import (
 	"context"
 	"fmt"
+	"github.com/pkg/errors"
 	"net/http"
 	"os"
 	"sync"
@@ -96,6 +97,14 @@ type FilerServer struct {
 }
 
 func NewFilerServer(defaultMux, readonlyMux *http.ServeMux, option *FilerOption) (fs *FilerServer, err error) {
+	redisPlugin, err := filer.RedisClientProvider(&filer.RedisClientOption{
+		Addr:     "localhost:6379",
+		Password: "",
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "init quota plugin of redis failed")
+	}
+	quotaPlugin := filer.NewQuotaPluginProvider(redisPlugin)
 
 	v := util.GetViper()
 	signingKey := v.GetString("jwt.filer_signing.key")
@@ -120,7 +129,7 @@ func NewFilerServer(defaultMux, readonlyMux *http.ServeMux, option *FilerOption)
 
 	fs.filer = filer.NewFiler(option.Masters, fs.grpcDialOption, option.Host, option.FilerGroup, option.Collection, option.DefaultReplication, option.DataCenter, func() {
 		fs.listenersCond.Broadcast()
-	})
+	}, quotaPlugin)
 	fs.filer.Cipher = option.Cipher
 	// we do not support IP whitelist right now
 	fs.filerGuard = security.NewGuard([]string{}, signingKey, expiresAfterSec, readSigningKey, readExpiresAfterSec)

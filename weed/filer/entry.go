@@ -2,7 +2,6 @@ package filer
 
 import (
 	"fmt"
-	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"os"
 	"strconv"
 	"time"
@@ -59,6 +58,15 @@ const (
 	QuotaErrorPrefix = "QuotaError:"
 )
 
+type QuotaInfo struct {
+	QuotaSize  uint64
+	Size       uint64
+	QuotaInode uint64
+	Inode      uint64
+
+	UpdatedAt time.Time
+}
+
 func (entry *Entry) Size() uint64 {
 	return maxUint64(maxUint64(TotalSize(entry.Chunks), entry.FileSize), uint64(len(entry.Content)))
 }
@@ -68,12 +76,8 @@ func (entry *Entry) GetXAttrSize() uint64 {
 	if len(val) == 0 {
 		return 0
 	}
-	b, err := util.ParseBytes(string(val))
-	if err != nil {
-		glog.Errorf("entry xattr %s  base64/bytes decode failed: %s", string(val), err.Error())
-		return 0
-	}
-	return b
+	b, _ := strconv.Atoi(string(val))
+	return uint64(b)
 }
 
 func (entry *Entry) SetXAttrSize(b int64) {
@@ -83,7 +87,7 @@ func (entry *Entry) SetXAttrSize(b int64) {
 	if entry.Extended == nil {
 		entry.Extended = make(map[string][]byte)
 	}
-	entry.Extended[XATTR_PREFIX+Size_Key] = []byte(util.BytesToHumanReadable(uint64(b)))
+	entry.Extended[XATTR_PREFIX+Size_Key] = []byte(fmt.Sprintf("%d", b))
 }
 
 func (entry *Entry) SetXAttrSizeQuota(b int64) {
@@ -93,7 +97,7 @@ func (entry *Entry) SetXAttrSizeQuota(b int64) {
 	if entry.Extended == nil {
 		entry.Extended = make(map[string][]byte)
 	}
-	entry.Extended[XATTR_PREFIX+Size_Quota_Key] = []byte(util.BytesToHumanReadable(uint64(b)))
+	entry.Extended[XATTR_PREFIX+Size_Quota_Key] = []byte(fmt.Sprintf("%d", b))
 }
 
 func (entry *Entry) GetXAttrInodeCount() uint64 {
@@ -114,6 +118,7 @@ func (entry *Entry) SetXAttrInodeCount(b int64) {
 	}
 	entry.Extended[XATTR_PREFIX+Inode_Key] = []byte(fmt.Sprintf("%d", b))
 }
+
 func (entry *Entry) SetXAttrInodeCountQuota(b int64) {
 	if b < 0 {
 		b = 0
@@ -129,12 +134,8 @@ func (entry *Entry) GetXAttrSizeQuota() uint64 {
 	if len(val) == 0 {
 		return 0
 	}
-	b, err := util.ParseBytes(string(val))
-	if err != nil {
-		glog.Errorf("entry xattr %s  base64/bytes decode failed: %s", string(val), err.Error())
-		return 0
-	}
-	return b
+	b, _ := strconv.Atoi(string(val))
+	return uint64(b)
 }
 
 func (entry *Entry) SetAuthKey(authKey string) {
