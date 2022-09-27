@@ -6,6 +6,7 @@ import (
 	"github.com/pkg/errors"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -52,6 +53,7 @@ import (
 
 type FilerOption struct {
 	Masters               map[string]pb.ServerAddress
+	Redis                 string
 	FilerGroup            string
 	Collection            string
 	DefaultReplication    string
@@ -97,9 +99,15 @@ type FilerServer struct {
 }
 
 func NewFilerServer(defaultMux, readonlyMux *http.ServeMux, option *FilerOption) (fs *FilerServer, err error) {
+	if len(option.Redis) == 0 {
+		panic("no quota redis cluster given, quit")
+	}
+
+	redisCluster := strings.Split(option.Redis, ",")
+	glog.V(0).Infof("bootstrap from redis %v", redisCluster)
 	redisPlugin, err := filer.RedisClientProvider(&filer.RedisClientOption{
-		Addr:     "localhost:6379",
-		Password: "",
+		Addr:     redisCluster,
+		Password: "dd556ccc1c9d067c240219a3ee667012",
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "init quota plugin of redis failed")

@@ -10,15 +10,14 @@ import (
 )
 
 type RedisClientOption struct {
-	Addr     string
+	Addr     []string
 	Password string
 }
 
-func RedisClientProvider(o *RedisClientOption) (*redis.Client, error) {
-	client := redis.NewClient(&redis.Options{
-		Addr:               o.Addr,
-		Password:           o.Password, // no password set IRisiI8m8JElsvJ7aChgWPcv1lwRGdTu
-		DB:                 0,          // use default DB
+func RedisClientProvider(o *RedisClientOption) (*redis.ClusterClient, error) {
+	client := redis.NewClusterClient(&redis.ClusterOptions{
+		Addrs:              o.Addr,
+		Password:           o.Password,
 		MaxRetries:         5,
 		DialTimeout:        10 * time.Second,
 		ReadTimeout:        30 * time.Second,
@@ -28,6 +27,7 @@ func RedisClientProvider(o *RedisClientOption) (*redis.Client, error) {
 		IdleTimeout:        500 * time.Millisecond,
 		IdleCheckFrequency: 500 * time.Millisecond,
 	})
+
 	return client, client.Ping().Err()
 }
 
@@ -39,10 +39,10 @@ const (
 )
 
 type QuotaPlugin struct {
-	client *redis.Client
+	client *redis.ClusterClient
 }
 
-func NewQuotaPluginProvider(client *redis.Client) *QuotaPlugin {
+func NewQuotaPluginProvider(client *redis.ClusterClient) *QuotaPlugin {
 	return &QuotaPlugin{client: client}
 }
 
