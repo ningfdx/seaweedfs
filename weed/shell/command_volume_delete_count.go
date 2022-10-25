@@ -3,9 +3,9 @@ package shell
 import (
 	"flag"
 	"fmt"
-	"github.com/chrislusf/seaweedfs/weed/pb/master_pb"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/push"
+	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
 	"golang.org/x/exp/slices"
 	"io"
 	"path/filepath"

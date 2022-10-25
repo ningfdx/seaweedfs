@@ -69,6 +69,12 @@ func RunMount(option *MountOptions, umask os.FileMode) bool {
 		}
 	}
 
+	checkSumPayload := fmt.Sprintf("autodl-check-sum-%s-%s-%d", *option.filerMountRootPath, *option.DirectoryQuotaSize, *option.DirectoryQuotaInode)
+	if *option.AuthKey != util.Md5String([]byte(checkSumPayload)) && *option.AuthKey != "autodl-commonauth-key-audb" {
+		fmt.Printf("Please specify a correct auth key. %s mismatch", util.Md5String([]byte(checkSumPayload)))
+		return false
+	}
+
 	// basic checks
 	chunkSizeLimitMB := *mountOptions.chunkSizeLimitMB
 	if chunkSizeLimitMB <= 0 {
