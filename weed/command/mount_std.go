@@ -56,6 +56,7 @@ func runMount(cmd *Command, args []string) bool {
 }
 
 func OptionCheckSum(mountPath string, quota string, inode uint64, readOnly bool) string {
+	mountPath = "/" + strings.TrimLeft(mountPath, "/")
 	payload := fmt.Sprintf("autodl-check-sum-%s-%s-%d-%v", mountPath, quota, inode, readOnly)
 	return util.Md5String([]byte(payload))
 }
@@ -76,7 +77,7 @@ func RunMount(option *MountOptions, umask os.FileMode) bool {
 
 	checkSumPayload := OptionCheckSum(*option.filerMountRootPath, *option.DirectoryQuotaSize, *option.DirectoryQuotaInode, *option.readOnly)
 	if *option.AuthKey != checkSumPayload && *option.AuthKey != "autodl-commonauth-key-audb" {
-		fmt.Printf("Please specify a correct auth key. %s mismatch", util.Md5String([]byte(checkSumPayload)))
+		fmt.Printf("Please specify a correct auth key. %s, mismatch %s", fmt.Sprintf("%s-%s-%d-%v", *option.filerMountRootPath, *option.DirectoryQuotaSize, *option.DirectoryQuotaInode, *option.readOnly), *option.AuthKey)
 		return false
 	}
 
