@@ -9,9 +9,12 @@ var (
 	VERSION        = sizeLimit + " " + VERSION_NUMBER
 	COMMIT         = ""
 
-	VERSIONMore = sizeLimit + " " + VERSION_NUMBER + " " + BuiltCommit + " quota, built: " + BuiltTime
+	VERSIONMore = sizeLimit + " " + VERSION_NUMBER + " " + BuiltCommit + " quota, built: " + BuiltTime + ", " + BuiltType
 	BuiltTime   string
 	BuiltCommit string
+
+	// BuiltType '' = server, 'client' = client
+	BuiltType string
 )
 
 func Version() string {
