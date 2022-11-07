@@ -107,3 +107,28 @@ func (p *QuotaPlugin) GetAll(path string) (quotaSize, quotaInode, size, inode in
 
 	return
 }
+
+func defineUserUsageRedisKey(path string) string {
+	path = strings.Trim(path, "/")
+	return fmt.Sprintf("adfs-usage-%s", path)
+}
+
+func (p *QuotaPlugin) PathEveryDayHighestUsageSizeSet(dayPath string, path string, size int64) (err error) {
+	if size == 0 {
+		return
+	}
+
+	dayPath = defineUserUsageRedisKey(dayPath)
+	path = strings.Trim(path, "/")
+
+	res, err := p.client.HGet(dayPath, path).Result()
+	if err != nil {
+		return fmt.Errorf("failed to hget %s-%s, %s", dayPath, path, err.Error())
+	}
+	val, _ := strconv.Atoi(res)
+	if size < int64(val) {
+		return nil
+	}
+
+	return p.client.HSet(dayPath, path, size).Err()
+}

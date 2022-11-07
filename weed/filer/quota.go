@@ -1,6 +1,7 @@
 package filer
 
 import (
+	"fmt"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
@@ -84,6 +85,8 @@ func (f *Filer) runEventHandler(ch <-chan *event, persistCh chan map[util.FullPa
 
 func (f *Filer) handleQuotaPersist(persistCh chan map[util.FullPath]rootNodeAttr) {
 	for changes := range persistCh {
+		now := time.Now()
+
 		for node, val := range changes {
 			if node == util.FullPath(filepath.Separator) {
 				continue
@@ -102,6 +105,16 @@ func (f *Filer) handleQuotaPersist(persistCh chan map[util.FullPath]rootNodeAttr
 			if err != nil {
 				glog.Errorf("update entry of %s failed: %s", node, err.Error())
 				continue
+			}
+
+			// size有变大，需要进行峰值的比对，记录每日最大峰值
+			if usedSize > 0 {
+				usageKey := fmt.Sprintf("%d-%d-%d", now.Year(), now.Month(), now.Day())
+				err = f.quotaPlugin.PathEveryDayHighestUsageSizeSet(usageKey, node.Name(), usedSize)
+				if err != nil {
+					glog.Errorf("PathEveryDayHighestUsageSizeSet of %s failed: %s", node, err.Error())
+					continue
+				}
 			}
 
 			glog.V(4).Infof("handleQuotaPersist of %s changed: size %d, inode %d, used_size: %d, used_inode: %d", node, val.sizeChanged, val.inodeCountChanged, usedSize, usedInode)
