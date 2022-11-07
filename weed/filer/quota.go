@@ -108,7 +108,7 @@ func (f *Filer) handleQuotaPersist(persistCh chan map[util.FullPath]rootNodeAttr
 			}
 
 			// size有变大，需要进行峰值的比对，记录每日最大峰值
-			if usedSize > 0 {
+			if val.sizeChanged > 0 {
 				usageKey := fmt.Sprintf("%d-%d-%d", now.Year(), now.Month(), now.Day())
 				err = f.quotaPlugin.PathEveryDayHighestUsageSizeSet(usageKey, node.Name(), usedSize)
 				if err != nil {
