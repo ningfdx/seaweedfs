@@ -1,7 +1,9 @@
 package filer
 
 import (
+	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
@@ -45,8 +47,113 @@ type Entry struct {
 	Quota           int64
 }
 
+const (
+	XATTR_PREFIX    = "xattr-"
+	Size_Quota_Key  = "quota-size"
+	Size_Key        = "size"
+	Inode_Quota_Key = "quota-inode"
+	Inode_Key       = "inode"
+	Auth_Key        = "auth-key"
+
+	QuotaErrorPrefix = "QuotaError:"
+)
+
+type QuotaInfo struct {
+	QuotaSize  uint64
+	Size       uint64
+	QuotaInode uint64
+	Inode      uint64
+
+	UpdatedAt time.Time
+}
+
 func (entry *Entry) Size() uint64 {
 	return maxUint64(maxUint64(TotalSize(entry.Chunks), entry.FileSize), uint64(len(entry.Content)))
+}
+
+func (entry *Entry) GetXAttrSize() uint64 {
+	val := entry.Extended[XATTR_PREFIX+Size_Key]
+	if len(val) == 0 {
+		return 0
+	}
+	b, _ := strconv.Atoi(string(val))
+	return uint64(b)
+}
+
+func (entry *Entry) SetXAttrSize(b int64) {
+	if b < 0 {
+		b = 0
+	}
+	if entry.Extended == nil {
+		entry.Extended = make(map[string][]byte)
+	}
+	entry.Extended[XATTR_PREFIX+Size_Key] = []byte(fmt.Sprintf("%d", b))
+}
+
+func (entry *Entry) SetXAttrSizeQuota(b int64) {
+	if b < 0 {
+		b = 0
+	}
+	if entry.Extended == nil {
+		entry.Extended = make(map[string][]byte)
+	}
+	entry.Extended[XATTR_PREFIX+Size_Quota_Key] = []byte(fmt.Sprintf("%d", b))
+}
+
+func (entry *Entry) GetXAttrInodeCount() uint64 {
+	val := entry.Extended[XATTR_PREFIX+Inode_Key]
+	if len(val) == 0 {
+		return 0
+	}
+	b, _ := strconv.Atoi(string(val))
+	return uint64(b)
+}
+
+func (entry *Entry) SetXAttrInodeCount(b int64) {
+	if b < 0 {
+		b = 0
+	}
+	if entry.Extended == nil {
+		entry.Extended = make(map[string][]byte)
+	}
+	entry.Extended[XATTR_PREFIX+Inode_Key] = []byte(fmt.Sprintf("%d", b))
+}
+
+func (entry *Entry) SetXAttrInodeCountQuota(b int64) {
+	if b < 0 {
+		b = 0
+	}
+	if entry.Extended == nil {
+		entry.Extended = make(map[string][]byte)
+	}
+	entry.Extended[XATTR_PREFIX+Inode_Quota_Key] = []byte(fmt.Sprintf("%d", b))
+}
+
+func (entry *Entry) GetXAttrSizeQuota() uint64 {
+	val := entry.Extended[XATTR_PREFIX+Size_Quota_Key]
+	if len(val) == 0 {
+		return 0
+	}
+	b, _ := strconv.Atoi(string(val))
+	return uint64(b)
+}
+
+func (entry *Entry) SetAuthKey(authKey string) {
+	entry.Extended[XATTR_PREFIX+Auth_Key] = []byte(authKey)
+}
+
+func (entry *Entry) GetAuthKey() string {
+	val := entry.Extended[XATTR_PREFIX+Auth_Key]
+	return string(val)
+}
+
+func (entry *Entry) GetXAttrInodeQuota() uint64 {
+	val := entry.Extended[XATTR_PREFIX+Inode_Quota_Key]
+	if len(val) == 0 {
+		return 0
+	}
+	b, _ := strconv.Atoi(string(val))
+	return uint64(b)
 }
 
 func (entry *Entry) Timestamp() time.Time {

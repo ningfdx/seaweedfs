@@ -88,11 +88,9 @@ func (mc *MetaCache) AtomicUpdateEntryFromFiler(ctx context.Context, oldPath uti
 
 	if newEntry != nil {
 		newDir, _ := newEntry.DirAndName()
-		if mc.isCachedFn(util.FullPath(newDir)) {
-			glog.V(3).Infof("InsertEntry %s/%s", newDir, newEntry.Name())
-			if err := mc.localStore.InsertEntry(ctx, newEntry); err != nil {
-				return err
-			}
+		glog.V(3).Infof("InsertEntry %s/%s", newDir, newEntry.Name())
+		if err := mc.localStore.InsertEntry(ctx, newEntry); err != nil {
+			return err
 		}
 	}
 	return nil

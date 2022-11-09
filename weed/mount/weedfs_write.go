@@ -14,7 +14,6 @@ import (
 func (wfs *WFS) saveDataAsChunk(fullPath util.FullPath) filer.SaveDataAsChunkFunctionType {
 
 	return func(reader io.Reader, filename string, offset int64) (chunk *filer_pb.FileChunk, err error) {
-
 		fileId, uploadResult, err, data := operation.UploadWithRetry(
 			wfs,
 			&filer_pb.AssignVolumeRequest{

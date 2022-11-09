@@ -24,6 +24,7 @@ When creating a link:
 /** Create a hard link to a file */
 func (wfs *WFS) Link(cancel <-chan struct{}, in *fuse.LinkIn, name string, out *fuse.EntryOut) (code fuse.Status) {
 
+	return fuse.Status(syscall.ENOSPC)
 	if wfs.IsOverQuota {
 		return fuse.Status(syscall.ENOSPC)
 	}

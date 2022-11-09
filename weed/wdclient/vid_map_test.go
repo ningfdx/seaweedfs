@@ -65,7 +65,11 @@ func TestLocationIndex(t *testing.T) {
 }
 
 func TestLookupFileId(t *testing.T) {
+<<<<<<< HEAD
 	mc := NewMasterClient(grpc.EmptyDialOption{}, "", "", "", "", "", nil)
+=======
+	mc := NewMasterClient(grpc.EmptyDialOption{}, "", "", "", "", nil)
+>>>>>>> quota-0706
 	length := 5
 
 	//Construct a cache linked list of length 5

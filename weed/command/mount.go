@@ -17,6 +17,7 @@ type MountOptions struct {
 	ttlSec             *int
 	chunkSizeLimitMB   *int
 	concurrentWriters  *int
+	concurrentReaders  *int
 	cacheDir           *string
 	cacheSizeMB        *int64
 	dataCenter         *string
@@ -32,6 +33,11 @@ type MountOptions struct {
 	localSocket        *string
 	disableXAttr       *bool
 	extraOptions       []string
+	ConcurrentLimit    *int64
+	AuthKey            *string
+
+	DirectoryQuotaSize  *string
+	DirectoryQuotaInode *uint64
 }
 
 var (
@@ -54,6 +60,7 @@ func init() {
 	mountOptions.ttlSec = cmdMount.Flag.Int("ttl", 0, "file ttl in seconds")
 	mountOptions.chunkSizeLimitMB = cmdMount.Flag.Int("chunkSizeLimitMB", 2, "local write buffer size, also chunk large files")
 	mountOptions.concurrentWriters = cmdMount.Flag.Int("concurrentWriters", 32, "limit concurrent goroutine writers if not 0")
+	mountOptions.concurrentReaders = cmdMount.Flag.Int("concurrentReaders", 32, "limit concurrent goroutine readers if not 0")
 	mountOptions.cacheDir = cmdMount.Flag.String("cacheDir", os.TempDir(), "local cache directory for file chunks and meta data")
 	mountOptions.cacheSizeMB = cmdMount.Flag.Int64("cacheCapacityMB", 0, "local file chunk cache capacity in MB")
 	mountOptions.dataCenter = cmdMount.Flag.String("dataCenter", "", "prefer to write to the data center")
@@ -67,7 +74,13 @@ func init() {
 	mountOptions.debug = cmdMount.Flag.Bool("debug", false, "serves runtime profiling data, e.g., http://localhost:<debug.port>/debug/pprof/goroutine?debug=2")
 	mountOptions.debugPort = cmdMount.Flag.Int("debug.port", 6061, "http port for debugging")
 	mountOptions.localSocket = cmdMount.Flag.String("localSocket", "", "default to /tmp/seaweedfs-mount-<mount_dir_hash>.sock")
-	mountOptions.disableXAttr = cmdMount.Flag.Bool("disableXAttr", false, "disable xattr")
+	mountOptions.disableXAttr = cmdMount.Flag.Bool("disableXAttr", true, "disable xattr")
+	mountOptions.ConcurrentLimit = cmdMount.Flag.Int64("concurrentLimit", 2, "concurrent limit")
+	mountOptions.AuthKey = cmdMount.Flag.String("authKey", "", "auth key")
+
+	// if mount point is in quota-* format, then you can use these option
+	mountOptions.DirectoryQuotaSize = cmdMount.Flag.String("directoryQuotaSize", "200GiB", "10KiB = 1024, 10K = 1000. If mount point is in quota-* format, then you can use these option")
+	mountOptions.DirectoryQuotaInode = cmdMount.Flag.Uint64("directoryQuotaInode", 600000, "max inode number")
 
 	mountCpuProfile = cmdMount.Flag.String("cpuprofile", "", "cpu profile output file")
 	mountMemProfile = cmdMount.Flag.String("memprofile", "", "memory profile output file")

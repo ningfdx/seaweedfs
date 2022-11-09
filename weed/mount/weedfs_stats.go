@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"github.com/hanwen/go-fuse/v2/fuse"
+	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 	"math"
 	"time"
 )
@@ -19,7 +21,56 @@ type statsCache struct {
 
 func (wfs *WFS) StatFs(cancel <-chan struct{}, in *fuse.InHeader, out *fuse.StatfsOut) (code fuse.Status) {
 
-	// glog.V(4).Infof("reading fs stats")
+	glog.V(4).Infof("reading fs stats of %d", in.NodeId)
+
+	rootDir := util.FullPath(wfs.option.FilerMountRootPath)
+	if rootDir.IsQuotaRootNode() {
+		rootEntry, err := filer_pb.GetEntry(wfs, rootDir)
+		if err != nil {
+			glog.V(1).Infof("dir GetEntry %s: %v", rootDir, err)
+			return fuse.ENOENT
+		}
+		localEntry := filer.FromPbEntry(string(rootDir), rootEntry)
+
+		totalDiskSize := localEntry.GetXAttrSizeQuota()
+		usedDiskSize := localEntry.GetXAttrSize()
+		totalFileCount := localEntry.GetXAttrInodeQuota()
+		actualFileCount := localEntry.GetXAttrInodeCount()
+
+		glog.V(4).Infof("reading fs stats value: totalDiskSize %v ", totalDiskSize)
+		glog.V(4).Infof("reading fs stats value: usedDiskSize %v ", usedDiskSize)
+		glog.V(4).Infof("reading fs stats value: totalFileCount %v ", totalFileCount)
+		glog.V(4).Infof("reading fs stats value: actualFileCount %v ", actualFileCount)
+
+		// 超过上限了, 显示上限
+		if usedDiskSize > totalDiskSize {
+			totalDiskSize = usedDiskSize
+		}
+		if actualFileCount > totalFileCount {
+			totalFileCount = actualFileCount
+		}
+
+		// Compute the total number of available blocks
+		out.Blocks = totalDiskSize / blockSize
+
+		// Compute the number of used blocks
+		numBlocks := uint64(usedDiskSize / blockSize)
+
+		// Report the number of free and available blocks for the block size
+		out.Bfree = out.Blocks - numBlocks
+		out.Bavail = out.Blocks - numBlocks
+		out.Bsize = uint32(blockSize)
+
+		// Report the total number of possible files in the file system (and those free)
+		out.Files = totalFileCount
+		out.Ffree = totalFileCount - actualFileCount
+
+		// Report the maximum length of a name and the minimum fragment size
+		out.NameLen = 1024
+		out.Frsize = uint32(blockSize)
+
+		return fuse.OK
+	}
 
 	if wfs.stats.lastChecked < time.Now().Unix()-20 {
 

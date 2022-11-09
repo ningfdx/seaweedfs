@@ -97,4 +97,5 @@ func (wfs *WFS) Open(cancel <-chan struct{}, in *fuse.OpenIn, out *fuse.OpenOut)
  */
 func (wfs *WFS) Release(cancel <-chan struct{}, in *fuse.ReleaseIn) {
 	wfs.ReleaseHandle(FileHandleId(in.Fh))
+	wfs.gcCh <- struct{}{}
 }

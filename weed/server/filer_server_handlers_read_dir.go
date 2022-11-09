@@ -18,6 +18,10 @@ import (
 // is empty.
 func (fs *FilerServer) listDirectoryHandler(w http.ResponseWriter, r *http.Request) {
 
+	// disable filer view
+	w.WriteHeader(http.StatusNotFound)
+	return
+
 	stats.FilerRequestCounter.WithLabelValues(stats.DirList).Inc()
 
 	path := r.URL.Path

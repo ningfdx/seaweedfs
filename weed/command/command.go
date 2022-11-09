@@ -2,46 +2,58 @@ package command
 
 import (
 	"fmt"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 	"os"
 	"strings"
 
 	flag "github.com/seaweedfs/seaweedfs/weed/util/fla9"
 )
 
-var Commands = []*Command{
-	cmdAutocomplete,
-	cmdUnautocomplete,
-	cmdBackup,
-	cmdBenchmark,
-	cmdCompact,
-	cmdDownload,
-	cmdExport,
-	cmdFiler,
-	cmdFilerBackup,
-	cmdFilerCat,
-	cmdFilerCopy,
-	cmdFilerMetaBackup,
-	cmdFilerMetaTail,
-	cmdFilerRemoteGateway,
-	cmdFilerRemoteSynchronize,
-	cmdFilerReplicate,
-	cmdFilerSynchronize,
-	cmdFix,
-	cmdFuse,
-	cmdIam,
-	cmdMaster,
-	cmdMasterFollower,
-	cmdMount,
-	cmdMqBroker,
-	cmdS3,
-	cmdScaffold,
-	cmdServer,
-	cmdShell,
-	cmdUpdate,
-	cmdUpload,
-	cmdVersion,
-	cmdVolume,
-	cmdWebDav,
+var Commands []*Command
+
+func init() {
+	if util.BuiltType == "client" {
+		Commands = []*Command{
+			cmdVersion,
+			cmdMount,
+		}
+	} else {
+		Commands = []*Command{
+			cmdAutocomplete,
+			cmdUnautocomplete,
+			cmdBackup,
+			cmdBenchmark,
+			cmdCompact,
+			cmdDownload,
+			cmdExport,
+			cmdFiler,
+			cmdFilerBackup,
+			cmdFilerCat,
+			cmdFilerCopy,
+			cmdFilerMetaBackup,
+			cmdFilerMetaTail,
+			cmdFilerRemoteGateway,
+			cmdFilerRemoteSynchronize,
+			cmdFilerReplicate,
+			cmdFilerSynchronize,
+			cmdFix,
+			cmdFuse,
+			cmdIam,
+			cmdMaster,
+			cmdMasterFollower,
+			cmdMount,
+			cmdMqBroker,
+			cmdS3,
+			cmdScaffold,
+			cmdServer,
+			cmdShell,
+			cmdUpdate,
+			cmdUpload,
+			cmdVersion,
+			cmdVolume,
+			cmdWebDav,
+		}
+	}
 }
 
 type Command struct {

@@ -17,18 +17,21 @@ import (
 )
 
 func (f *Filer) NotifyUpdateEvent(ctx context.Context, oldEntry, newEntry *Entry, deleteChunks, isFromOtherCluster bool, signatures []int32) {
-	var fullpath string
+	var directory string
+	var fullpath util.FullPath
 	if oldEntry != nil {
-		fullpath = string(oldEntry.FullPath)
+		fullpath = oldEntry.FullPath
+		directory, _ = oldEntry.FullPath.DirAndName()
 	} else if newEntry != nil {
-		fullpath = string(newEntry.FullPath)
+		fullpath = newEntry.FullPath
+		directory, _ = newEntry.FullPath.DirAndName()
 	} else {
 		return
 	}
 
 	// println("fullpath:", fullpath)
 
-	if strings.HasPrefix(fullpath, SystemLogDir) {
+	if strings.HasPrefix(string(fullpath), SystemLogDir) {
 		return
 	}
 	foundSelf := false
@@ -54,15 +57,21 @@ func (f *Filer) NotifyUpdateEvent(ctx context.Context, oldEntry, newEntry *Entry
 		Signatures:         signatures,
 	}
 
+	f.eventCh <- &event{
+		fullpath,
+		directory,
+		eventNotification,
+	}
+
 	if notification.Queue != nil {
 		glog.V(3).Infof("notifying entry update %v", fullpath)
-		if err := notification.Queue.SendMessage(fullpath, eventNotification); err != nil {
+		if err := notification.Queue.SendMessage(string(fullpath), eventNotification); err != nil {
 			// throw message
 			glog.Error(err)
 		}
 	}
 
-	f.logMetaEvent(ctx, fullpath, eventNotification)
+	f.logMetaEvent(ctx, string(fullpath), eventNotification)
 
 }
 

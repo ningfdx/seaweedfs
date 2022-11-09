@@ -2,17 +2,22 @@ package mount
 
 import (
 	"context"
+	"fmt"
+	"github.com/hanwen/go-fuse/v2/fuse"
+	"github.com/pkg/errors"
 	"math/rand"
 	"os"
 	"path"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/hanwen/go-fuse/v2/fuse"
 	"google.golang.org/grpc"
 
+	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/seaweedfs/seaweedfs/weed/filer"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/mount/meta_cache"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
@@ -22,8 +27,7 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/util/chunk_cache"
 	"github.com/seaweedfs/seaweedfs/weed/util/grace"
 	"github.com/seaweedfs/seaweedfs/weed/wdclient"
-
-	"github.com/hanwen/go-fuse/v2/fs"
+	"golang.org/x/time/rate"
 )
 
 type Option struct {
@@ -38,12 +42,19 @@ type Option struct {
 	DiskType           types.DiskType
 	ChunkSizeLimit     int64
 	ConcurrentWriters  int
+	ConcurrentReaders  int
 	CacheDir           string
 	CacheSizeMB        int64
 	DataCenter         string
 	Umask              os.FileMode
 	Quota              int64
 	DisableXAttr       bool
+	ConcurrentLimit    int64
+	AuthKey            string
+
+	// if mount point is in quota-* format, then you can use these option
+	DirectoryQuotaSize  string
+	DirectoryQuotaInode uint64
 
 	MountUid         uint32
 	MountGid         uint32
@@ -77,16 +88,37 @@ type WFS struct {
 	dhmap             *DirectoryHandleToInode
 	fuseServer        *fuse.Server
 	IsOverQuota       bool
+	concurrentLimit   chan bool
+	writeLimiter      *rate.Limiter
+	readLimiter       *rate.Limiter
+	gcCh              chan struct{}
+
+	rootPathQuotaMapMutex sync.Mutex
+	rootPathQuotaMap      map[string]filer.QuotaInfo
+
+	writingPathMapMutex sync.Mutex
+	writingPathMap      map[string]uint64
 }
 
 func NewSeaweedFileSystem(option *Option) *WFS {
+	concurrentLimit := option.ConcurrentLimit
+	if concurrentLimit <= 1 {
+		concurrentLimit = 2
+	}
 	wfs := &WFS{
-		RawFileSystem: fuse.NewDefaultRawFileSystem(),
-		option:        option,
-		signature:     util.RandomInt32(),
-		inodeToPath:   NewInodeToPath(util.FullPath(option.FilerMountRootPath)),
-		fhmap:         NewFileHandleToInode(),
-		dhmap:         NewDirectoryHandleToInode(),
+		RawFileSystem:   fuse.NewDefaultRawFileSystem(),
+		option:          option,
+		signature:       util.RandomInt32(),
+		inodeToPath:     NewInodeToPath(util.FullPath(option.FilerMountRootPath)),
+		fhmap:           NewFileHandleToInode(),
+		dhmap:           NewDirectoryHandleToInode(),
+		concurrentLimit: make(chan bool, concurrentLimit),
+		writeLimiter:    util.NewLimiter(int(concurrentLimit) * 52 * util.MBpsLimit),
+		readLimiter:     util.NewLimiter(int(concurrentLimit) * 104 * util.MBpsLimit),
+		gcCh:            make(chan struct{}, 5),
+
+		rootPathQuotaMap: make(map[string]filer.QuotaInfo),
+		writingPathMap:   make(map[string]uint64),
 	}
 
 	wfs.option.filerIndex = int32(rand.Intn(len(option.FilerAddresses)))
@@ -118,6 +150,126 @@ func (wfs *WFS) StartBackgroundTasks() {
 	startTime := time.Now()
 	go meta_cache.SubscribeMetaEvents(wfs.metaCache, wfs.signature, wfs, wfs.option.FilerMountRootPath, startTime.UnixNano())
 	go wfs.loopCheckQuota()
+	go wfs.gcHelper()
+	err := wfs.PrepareForQuota()
+	if err != nil {
+		glog.Fatalf("PrepareForQuota failed %s: %v", wfs.option.FilerMountRootPath, err)
+		return
+	}
+	glog.Infof("PrepareForQuota finished %s", wfs.option.FilerMountRootPath)
+}
+
+func (wfs *WFS) PrepareForQuota() error {
+	rootEntry, err := wfs.prepareRootCache()
+	if err != nil {
+		return errors.Wrap(err, "prepare root cache")
+	}
+	err = wfs.prepareQuota(rootEntry)
+	if err != nil {
+		return errors.Wrap(err, "prepare quota")
+	}
+	return nil
+}
+
+func (wfs *WFS) prepareRootCache() (*filer_pb.Entry, error) {
+	filerPath := util.FullPath(wfs.option.FilerMountRootPath)
+	glog.V(4).Infof("ReadRootEntries %s ...", filerPath)
+	var rootEntry *filer_pb.Entry
+	var getErr error
+
+	err := util.Retry("ReadRootEntries", func() error {
+		parent, _ := filerPath.DirAndName()
+		if filerPath.IsRootNode() {
+			rootEntry, getErr = filer_pb.GetEntry(wfs, filerPath)
+			if errors.Is(getErr, filer_pb.ErrNotFound) {
+				glog.V(4).Infof("No root path found, create it in %s  (%s)...", parent, filerPath)
+				rootEntry = &filer_pb.Entry{
+					Name:        filerPath.Name(),
+					IsDirectory: true,
+					Attributes: &filer_pb.FuseAttributes{
+						FileSize: 4 * 1024,
+						Mtime:    time.Now().Unix(),
+						Crtime:   time.Now().Unix(),
+						FileMode: uint32(os.ModeDir) | 0755,
+					},
+				}
+
+				err := wfs.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
+
+					wfs.mapPbIdFromLocalToFiler(rootEntry)
+					defer wfs.mapPbIdFromFilerToLocal(rootEntry)
+
+					request := &filer_pb.CreateEntryRequest{
+						Directory:  parent,
+						Entry:      rootEntry,
+						Signatures: []int32{wfs.signature},
+					}
+
+					glog.V(1).Infof("mkdir: %v", request)
+					if err := filer_pb.CreateEntry(client, request); err != nil {
+						glog.V(0).Infof("mkdir %s: %v", filerPath, err)
+						return err
+					}
+
+					if err := wfs.metaCache.InsertEntry(context.Background(), filer.FromPbEntry(request.Directory, request.Entry)); err != nil {
+						return fmt.Errorf("local mkdir dir %s: %v", filerPath, err)
+					}
+
+					return nil
+				})
+				if err != nil {
+					return errors.Wrap(err, "filer client create entry failed")
+				}
+			} else if getErr != nil {
+				return getErr
+			}
+		} else {
+			rootEntry = &filer_pb.Entry{
+				IsDirectory: true,
+				Attributes: &filer_pb.FuseAttributes{
+					FileSize: 4 * 1024,
+					Mtime:    time.Now().Unix(),
+					Crtime:   time.Now().Unix(),
+					FileMode: uint32(os.ModeDir) | 0755,
+				},
+				Extended: rootEntry.Extended,
+			}
+		}
+
+		entry := filer.FromPbEntry("/", rootEntry)
+		if err := wfs.metaCache.InsertEntry(context.Background(), entry); err != nil {
+			glog.V(0).Infof("read %s: %v", entry.FullPath, err)
+			return err
+		}
+		return nil
+	})
+	glog.V(4).Infof("ReadRootEntries %s res: %v ...", filerPath, err)
+	return rootEntry, err
+}
+
+func (wfs *WFS) prepareQuota(entry *filer_pb.Entry) error {
+	filerPath := util.FullPath(wfs.option.FilerMountRootPath)
+	if !filerPath.IsQuotaRootNode() {
+		return nil
+	}
+	localEntry := filer.FromPbEntry("/", entry)
+
+	b, err := util.ParseBytes(wfs.option.DirectoryQuotaSize)
+	if err != nil {
+		glog.Errorf("ParseBytes DirectoryQuotaSize %s: %v", wfs.option.DirectoryQuotaSize, err)
+		return err
+	}
+
+	localEntry.SetXAttrSizeQuota(int64(b))
+	localEntry.SetXAttrInodeCountQuota(int64(wfs.option.DirectoryQuotaInode))
+	code := wfs.saveEntry(localEntry.FullPath, localEntry.ToProtoEntry())
+	if code != fuse.OK {
+		glog.Errorf("set DirectoryQuota failed %s", wfs.option.FilerMountRootPath)
+		return errors.New("wfs save entry failed")
+	}
+	glog.Errorf("set DirectoryQuota success %s, %d", wfs.option.DirectoryQuotaSize, wfs.option.DirectoryQuotaInode)
+
+	return nil
 }
 
 func (wfs *WFS) String() string {

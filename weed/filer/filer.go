@@ -3,6 +3,7 @@ package filer
 import (
 	"context"
 	"fmt"
+	"github.com/pkg/errors"
 	"github.com/seaweedfs/seaweedfs/weed/cluster"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
@@ -47,10 +48,13 @@ type Filer struct {
 	Signature           int32
 	FilerConf           *FilerConf
 	RemoteStorage       *FilerRemoteStorage
+
+	quotaPlugin *QuotaPlugin
+	eventCh     chan<- *event
 }
 
 func NewFiler(masters map[string]pb.ServerAddress, grpcDialOption grpc.DialOption, filerHost pb.ServerAddress,
-	filerGroup string, collection string, replication string, dataCenter string, notifyFn func()) *Filer {
+	filerGroup string, collection string, replication string, dataCenter string, notifyFn func(), quotaPlugin *QuotaPlugin) *Filer {
 	f := &Filer{
 		MasterClient:        wdclient.NewMasterClient(grpcDialOption, filerGroup, cluster.FilerType, filerHost, dataCenter, "", masters),
 		fileIdDeletionQueue: util.NewUnboundedQueue(),
@@ -58,6 +62,7 @@ func NewFiler(masters map[string]pb.ServerAddress, grpcDialOption grpc.DialOptio
 		FilerConf:           NewFilerConf(),
 		RemoteStorage:       NewFilerRemoteStorage(),
 		UniqueFilerId:       util.RandomInt32(),
+		quotaPlugin:         quotaPlugin,
 	}
 	if f.UniqueFilerId < 0 {
 		f.UniqueFilerId = -f.UniqueFilerId
@@ -68,6 +73,7 @@ func NewFiler(masters map[string]pb.ServerAddress, grpcDialOption grpc.DialOptio
 	f.metaLogReplication = replication
 
 	go f.loopProcessingDeletion()
+	f.eventCh = f.eventHandler()
 
 	return f
 }
@@ -164,6 +170,11 @@ func (f *Filer) CreateEntry(ctx context.Context, entry *Entry, o_excl bool, isFr
 		return nil
 	}
 
+	err := f.checkInodeQuota(ctx, entry)
+	if err != nil {
+		return err
+	}
+
 	oldEntry, _ := f.FindEntry(ctx, entry.FullPath)
 
 	/*
@@ -205,6 +216,29 @@ func (f *Filer) CreateEntry(ctx context.Context, entry *Entry, o_excl bool, isFr
 	f.deleteChunksIfNotNew(oldEntry, entry)
 
 	glog.V(4).Infof("CreateEntry %s: created", entry.FullPath)
+
+	return nil
+}
+
+func (f *Filer) checkInodeQuota(ctx context.Context, entry *Entry) error {
+	exist, rootNodePath := entry.FullPath.GetRootDir()
+	if !exist {
+		return nil
+	}
+
+	quotaSize, quotaInode, size, inode, err := f.quotaPlugin.GetAll(rootNodePath.Name())
+	if err != nil {
+		return errors.Wrapf(err, "get quota info of %s failed", rootNodePath)
+	}
+	if quotaInode < inode+1 {
+		glog.V(4).Infof("inode info of %s: %d/%d", rootNodePath, inode, quotaInode)
+		return fmt.Errorf(QuotaErrorPrefix+" insert entry %s : inode count should be less than %d, now is %d", rootNodePath, quotaInode, inode)
+	}
+
+	if quotaSize < size+1 {
+		glog.V(4).Infof("size info of %s: %d/%d", rootNodePath, size, quotaSize)
+		return fmt.Errorf(QuotaErrorPrefix+" insert entry %s : size count should be less than %d, now is %d", rootNodePath, quotaSize, size)
+	}
 
 	return nil
 }
@@ -266,6 +300,28 @@ func (f *Filer) ensureParentDirectoryEntry(ctx context.Context, entry *Entry, di
 }
 
 func (f *Filer) UpdateEntry(ctx context.Context, oldEntry, entry *Entry) (err error) {
+	if entry != nil {
+		if entry.FullPath.IsQuotaRootNode() {
+			qs, qi, _, _, err := f.quotaPlugin.GetAll(entry.Name())
+			if err != nil {
+				glog.Errorf("get entry of %s failed: %s", entry.Name(), err.Error())
+				return filer_pb.ErrNotFound
+			}
+			glog.V(2).Infof("update entry: %s %v", entry.FullPath, *entry)
+			newSizeQuota := int64(entry.GetXAttrSizeQuota())
+			newInodeQuota := int64(entry.GetXAttrInodeQuota())
+			if newInodeQuota != qi {
+				f.quotaPlugin.QuotaInodeSet(entry.Name(), newInodeQuota)
+			}
+			if newSizeQuota != qs {
+				f.quotaPlugin.QuotaSizeSet(entry.Name(), newSizeQuota)
+			}
+
+			entry.SetXAttrSizeQuota(newSizeQuota)
+			entry.SetXAttrInodeCountQuota(newInodeQuota)
+		}
+	}
+
 	if oldEntry != nil {
 		entry.Attr.Crtime = oldEntry.Attr.Crtime
 		if oldEntry.IsDirectory() && !entry.IsDirectory() {
@@ -298,6 +354,7 @@ func (f *Filer) FindEntry(ctx context.Context, p util.FullPath) (entry *Entry, e
 	if string(p) == "/" {
 		return Root, nil
 	}
+
 	entry, err = f.Store.FindEntry(ctx, p)
 	if entry != nil && entry.TtlSec > 0 {
 		if entry.Crtime.Add(time.Duration(entry.TtlSec) * time.Second).Before(time.Now()) {
@@ -305,6 +362,21 @@ func (f *Filer) FindEntry(ctx context.Context, p util.FullPath) (entry *Entry, e
 			return nil, filer_pb.ErrNotFound
 		}
 	}
+
+	isRootNode := p.IsQuotaRootNode()
+	if entry != nil && isRootNode {
+		qs, qi, s, i, err := f.quotaPlugin.GetAll(p.Name())
+		if err != nil {
+			glog.Errorf("get entry of %s failed: %s", p.Name(), err.Error())
+			return nil, filer_pb.ErrNotFound
+		}
+
+		entry.SetXAttrSizeQuota(qs)
+		entry.SetXAttrSize(s)
+		entry.SetXAttrInodeCountQuota(qi)
+		entry.SetXAttrInodeCount(i)
+	}
+
 	return
 
 }

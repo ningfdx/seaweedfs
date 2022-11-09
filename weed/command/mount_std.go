@@ -55,7 +55,31 @@ func runMount(cmd *Command, args []string) bool {
 	return RunMount(&mountOptions, os.FileMode(umask))
 }
 
+func OptionCheckSum(mountPath string, quota string, inode uint64, readOnly bool) string {
+	mountPath = "/" + strings.TrimLeft(mountPath, "/")
+	payload := fmt.Sprintf("autodl-check-sum-%s-%s-%d-%v", mountPath, quota, inode, readOnly)
+	return util.Md5String([]byte(payload))
+}
+
 func RunMount(option *MountOptions, umask os.FileMode) bool {
+	startTime := time.Now()
+
+	filerMountRootPath := *option.filerMountRootPath
+	if util.FullPath(filerMountRootPath).IsQuotaRootNode() {
+		if option.DirectoryQuotaSize != nil {
+			_, err := util.ParseBytes(*option.DirectoryQuotaSize)
+			if err != nil {
+				glog.Errorf("failed to parse DirectoryQuotaSize %v: %v", option.DirectoryQuotaSize, err)
+				return true
+			}
+		}
+	}
+
+	checkSumPayload := OptionCheckSum(*option.filerMountRootPath, *option.DirectoryQuotaSize, *option.DirectoryQuotaInode, *option.readOnly)
+	if *option.AuthKey != checkSumPayload && *option.AuthKey != "autodl-commonauth-key-audb" {
+		fmt.Printf("Please specify a correct auth key. %s, mismatch %s", fmt.Sprintf("%s-%s-%d-%v", *option.filerMountRootPath, *option.DirectoryQuotaSize, *option.DirectoryQuotaInode, *option.readOnly), *option.AuthKey)
+		return false
+	}
 
 	// basic checks
 	chunkSizeLimitMB := *mountOptions.chunkSizeLimitMB
@@ -67,6 +91,10 @@ func RunMount(option *MountOptions, umask os.FileMode) bool {
 	// try to connect to filer
 	filerAddresses := pb.ServerAddresses(*option.filer).ToAddresses()
 	util.LoadConfiguration("security", false)
+
+	//TODO: 这里使用 WithUserAgent, 向filer发送鉴权信息，filer从对应用户目录的xattr中记录的token来鉴定权限
+	// grpc.WithUserAgent("userID=user-access-token")
+	// pkg/mod/google.golang.org/grpc@v1.47.0/dialoptions.go:407
 	grpcDialOption := security.LoadClientTLS(util.GetViper(), "grpc.client")
 	var cipher bool
 	var err error
@@ -89,8 +117,6 @@ func RunMount(option *MountOptions, umask os.FileMode) bool {
 		glog.Errorf("failed to talk to filer %v: %v", filerAddresses, err)
 		return true
 	}
-
-	filerMountRootPath := *option.filerMountRootPath
 
 	// clean up mount point
 	dir := util.ResolvePath(*option.dir)
@@ -172,8 +198,8 @@ func RunMount(option *MountOptions, umask os.FileMode) bool {
 		MaxReadAhead:             1024 * 1024 * 2,
 		IgnoreSecurityLabels:     false,
 		RememberInodes:           false,
-		FsName:                   serverFriendlyName + ":" + filerMountRootPath,
-		Name:                     "seaweedfs",
+		FsName:                   "adfs:" + filerMountRootPath,
+		Name:                     "adfs",
 		SingleThreaded:           false,
 		DisableXAttrs:            *option.disableXAttr,
 		Debug:                    *option.debug,
@@ -215,30 +241,35 @@ func RunMount(option *MountOptions, umask os.FileMode) bool {
 	}
 
 	seaweedFileSystem := mount.NewSeaweedFileSystem(&mount.Option{
-		MountDirectory:     dir,
-		FilerAddresses:     filerAddresses,
-		GrpcDialOption:     grpcDialOption,
-		FilerMountRootPath: mountRoot,
-		Collection:         *option.collection,
-		Replication:        *option.replication,
-		TtlSec:             int32(*option.ttlSec),
-		DiskType:           types.ToDiskType(*option.diskType),
-		ChunkSizeLimit:     int64(chunkSizeLimitMB) * 1024 * 1024,
-		ConcurrentWriters:  *option.concurrentWriters,
-		CacheDir:           *option.cacheDir,
-		CacheSizeMB:        *option.cacheSizeMB,
-		DataCenter:         *option.dataCenter,
-		Quota:              int64(*option.collectionQuota) * 1024 * 1024,
-		MountUid:           uid,
-		MountGid:           gid,
-		MountMode:          mountMode,
-		MountCtime:         fileInfo.ModTime(),
-		MountMtime:         time.Now(),
-		Umask:              umask,
-		VolumeServerAccess: *mountOptions.volumeServerAccess,
-		Cipher:             cipher,
-		UidGidMapper:       uidGidMapper,
-		DisableXAttr:       *option.disableXAttr,
+		MountDirectory:      dir,
+		FilerAddresses:      filerAddresses,
+		GrpcDialOption:      grpcDialOption,
+		FilerMountRootPath:  mountRoot,
+		Collection:          *option.collection,
+		Replication:         *option.replication,
+		TtlSec:              int32(*option.ttlSec),
+		DiskType:            types.ToDiskType(*option.diskType),
+		ChunkSizeLimit:      int64(chunkSizeLimitMB) * 1024 * 1024,
+		ConcurrentWriters:   *option.concurrentWriters,
+		ConcurrentReaders:   *option.concurrentReaders,
+		CacheDir:            *option.cacheDir,
+		CacheSizeMB:         *option.cacheSizeMB,
+		DataCenter:          *option.dataCenter,
+		Quota:               int64(*option.collectionQuota) * 1024 * 1024,
+		MountUid:            uid,
+		MountGid:            gid,
+		MountMode:           mountMode,
+		MountCtime:          fileInfo.ModTime(),
+		MountMtime:          time.Now(),
+		Umask:               umask,
+		VolumeServerAccess:  *mountOptions.volumeServerAccess,
+		Cipher:              cipher,
+		UidGidMapper:        uidGidMapper,
+		DisableXAttr:        *option.disableXAttr,
+		ConcurrentLimit:     *option.ConcurrentLimit,
+		AuthKey:             *option.AuthKey,
+		DirectoryQuotaSize:  *option.DirectoryQuotaSize,
+		DirectoryQuotaInode: *option.DirectoryQuotaInode,
 	})
 
 	server, err := fuse.NewServer(seaweedFileSystem, dir, fuseMountOptions)
@@ -256,7 +287,7 @@ func RunMount(option *MountOptions, umask os.FileMode) bool {
 
 	seaweedFileSystem.StartBackgroundTasks()
 
-	fmt.Printf("This is SeaweedFS version %s %s %s\n", util.Version(), runtime.GOOS, runtime.GOARCH)
+	fmt.Printf("This is SeaweedFS version %s %s %s, start cost: %s\n", util.Version(), runtime.GOOS, runtime.GOARCH, time.Now().Sub(startTime).String())
 
 	server.Serve()
 

@@ -3,8 +3,12 @@ package mount
 import (
 	"context"
 	"github.com/hanwen/go-fuse/v2/fuse"
+	"github.com/seaweedfs/seaweedfs/weed/filer"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"net/http"
 	"syscall"
+	"time"
 )
 
 /**
@@ -34,6 +38,13 @@ import (
  * @param fi file information
  */
 func (wfs *WFS) Write(cancel <-chan struct{}, in *fuse.WriteIn, data []byte) (written uint32, code fuse.Status) {
+	wfs.concurrentLimit <- true
+	defer func() {
+		<-wfs.concurrentLimit
+	}()
+	if err := wfs.writeLimiter.WaitN(context.Background(), len(data)); err != nil {
+		return 0, fuse.Status(syscall.EUSERS)
+	}
 
 	if wfs.IsOverQuota {
 		return 0, fuse.Status(syscall.ENOSPC)
@@ -42,6 +53,40 @@ func (wfs *WFS) Write(cancel <-chan struct{}, in *fuse.WriteIn, data []byte) (wr
 	fh := wfs.GetHandle(FileHandleId(in.Fh))
 	if fh == nil {
 		return 0, fuse.ENOENT
+	}
+
+	exist, rootDir := fh.FullPath().GetRootDir()
+	if exist {
+		wfs.rootPathQuotaMapMutex.Lock()
+		quotaInfo, ok := wfs.rootPathQuotaMap[rootDir.Name()]
+		if !ok || quotaInfo.UpdatedAt.Add(time.Second*10).Before(time.Now()) {
+			rootEntry, err := filer_pb.GetEntry(wfs, rootDir)
+			if err != nil {
+				glog.V(1).Infof("dir GetEntry %s: %v", rootDir, err)
+				return 0, fuse.ENOENT
+			}
+			localEntry := filer.FromPbEntry(string(rootDir), rootEntry)
+			quotaInfo = filer.QuotaInfo{
+				QuotaSize:  localEntry.GetXAttrSizeQuota(),
+				Size:       localEntry.GetXAttrSize(),
+				QuotaInode: localEntry.GetXAttrInodeQuota(),
+				Inode:      localEntry.GetXAttrInodeCount(),
+				UpdatedAt:  time.Now(),
+			}
+
+			wfs.rootPathQuotaMap[rootDir.Name()] = quotaInfo
+		}
+		wfs.rootPathQuotaMapMutex.Unlock()
+
+		wfs.writingPathMapMutex.Lock()
+		writingSize := wfs.writingPathMap[string(fh.FullPath())] + uint64(len(data))
+		wfs.writingPathMap[string(fh.FullPath())] = writingSize
+		wfs.writingPathMapMutex.Unlock()
+
+		glog.V(4).Infof("%v Write %d, quota %s: qs %d; s %d; qi %d; i %d, writing: %d", fh.FullPath(), len(data), rootDir, quotaInfo.QuotaSize, quotaInfo.Size, quotaInfo.QuotaInode, quotaInfo.Inode, writingSize)
+		if quotaInfo.QuotaSize < quotaInfo.Size+writingSize {
+			return 0, fuse.Status(syscall.EDQUOT)
+		}
 	}
 
 	fh.dirtyPages.writerPattern.MonitorWriteAt(int64(in.Offset), int(in.Size))

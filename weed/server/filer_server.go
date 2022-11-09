@@ -3,8 +3,10 @@ package weed_server
 import (
 	"context"
 	"fmt"
+	"github.com/pkg/errors"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -51,6 +53,7 @@ import (
 
 type FilerOption struct {
 	Masters               map[string]pb.ServerAddress
+	Redis                 string
 	FilerGroup            string
 	Collection            string
 	DefaultReplication    string
@@ -96,6 +99,20 @@ type FilerServer struct {
 }
 
 func NewFilerServer(defaultMux, readonlyMux *http.ServeMux, option *FilerOption) (fs *FilerServer, err error) {
+	if len(option.Redis) == 0 {
+		panic("no quota redis cluster given, quit")
+	}
+
+	redisCluster := strings.Split(option.Redis, ",")
+	glog.V(0).Infof("bootstrap from redis %v", redisCluster)
+	redisPlugin, err := filer.RedisClientProvider(&filer.RedisClientOption{
+		Addr:     redisCluster,
+		Password: "dd556ccc1c9d067c240219a3ee667012",
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "init quota plugin of redis failed")
+	}
+	quotaPlugin := filer.NewQuotaPluginProvider(redisPlugin)
 
 	v := util.GetViper()
 	signingKey := v.GetString("jwt.filer_signing.key")
@@ -120,7 +137,7 @@ func NewFilerServer(defaultMux, readonlyMux *http.ServeMux, option *FilerOption)
 
 	fs.filer = filer.NewFiler(option.Masters, fs.grpcDialOption, option.Host, option.FilerGroup, option.Collection, option.DefaultReplication, option.DataCenter, func() {
 		fs.listenersCond.Broadcast()
-	})
+	}, quotaPlugin)
 	fs.filer.Cipher = option.Cipher
 	// we do not support IP whitelist right now
 	fs.filerGuard = security.NewGuard([]string{}, signingKey, expiresAfterSec, readSigningKey, readExpiresAfterSec)
