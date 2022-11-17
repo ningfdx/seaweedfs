@@ -122,7 +122,7 @@ func (p *QuotaPlugin) PathEveryDayHighestUsageSizeSet(dayPath string, path strin
 	path = strings.Trim(path, "/")
 
 	res, err := p.client.HGet(dayPath, path).Result()
-	if err != nil {
+	if err != nil && !errors.Is(err, redis.Nil) {
 		return fmt.Errorf("failed to hget %s-%s, %s", dayPath, path, err.Error())
 	}
 	val, _ := strconv.Atoi(res)
