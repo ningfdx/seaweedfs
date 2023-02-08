@@ -68,7 +68,7 @@ type QuotaInfo struct {
 }
 
 func (entry *Entry) Size() uint64 {
-	return maxUint64(maxUint64(TotalSize(entry.Chunks), entry.FileSize), uint64(len(entry.Content)))
+	return maxUint64(maxUint64(TotalSize(entry.GetChunks()), entry.FileSize), uint64(len(entry.Content)))
 }
 
 func (entry *Entry) GetXAttrSize() uint64 {
@@ -198,7 +198,7 @@ func (entry *Entry) ToExistingProtoEntry(message *filer_pb.Entry) {
 	}
 	message.IsDirectory = entry.IsDirectory()
 	message.Attributes = EntryAttributeToPb(entry)
-	message.Chunks = entry.Chunks
+	message.Chunks = entry.GetChunks()
 	message.Extended = entry.Extended
 	message.HardLinkId = entry.HardLinkId
 	message.HardLinkCounter = entry.HardLinkCounter
@@ -228,6 +228,10 @@ func (entry *Entry) ToProtoFullEntry() *filer_pb.FullEntry {
 		Dir:   dir,
 		Entry: entry.ToProtoEntry(),
 	}
+}
+
+func (entry *Entry) GetChunks() []*filer_pb.FileChunk {
+	return entry.Chunks
 }
 
 func FromPbEntry(dir string, entry *filer_pb.Entry) *Entry {

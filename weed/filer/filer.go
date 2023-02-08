@@ -288,7 +288,9 @@ func (f *Filer) ensureParentDirectoryEntry(ctx context.Context, entry *Entry, di
 				return fmt.Errorf("mkdir %s: %v", dirPath, mkdirErr)
 			}
 		} else {
-			f.NotifyUpdateEvent(ctx, nil, dirEntry, false, isFromOtherCluster, nil)
+			if !strings.HasPrefix("/"+util.Join(dirParts[:]...), SystemLogDir) {
+				f.NotifyUpdateEvent(ctx, nil, dirEntry, false, isFromOtherCluster, nil)
+			}
 		}
 
 	} else if !dirEntry.IsDirectory() {

@@ -3,13 +3,14 @@ package mount
 import (
 	"context"
 	"fmt"
+	"syscall"
+	"time"
+
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"strings"
-	"syscall"
-	"time"
 )
 
 /**
@@ -148,7 +149,6 @@ func (wfs *WFS) Unlink(cancel <-chan struct{}, header *fuse.InHeader, name strin
 		return fuse.EIO
 	}
 
-	wfs.metaCache.DeleteEntry(context.Background(), entryFullPath)
 	wfs.inodeToPath.RemovePath(entryFullPath)
 
 	return fuse.OK

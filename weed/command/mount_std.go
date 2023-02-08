@@ -287,7 +287,8 @@ func RunMount(option *MountOptions, umask os.FileMode) bool {
 
 	seaweedFileSystem.StartBackgroundTasks()
 
-	fmt.Printf("This is SeaweedFS version %s %s %s, start cost: %s\n", util.Version(), runtime.GOOS, runtime.GOARCH, time.Now().Sub(startTime).String())
+	glog.V(0).Infof("mounted %s%s to %v", *option.filer, mountRoot, dir)
+	glog.V(0).Infof("This is version %s %s %s, start cost: %s\n", util.Version(), runtime.GOOS, runtime.GOARCH, time.Now().Sub(startTime).String())
 
 	server.Serve()
 
