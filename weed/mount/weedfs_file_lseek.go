@@ -2,6 +2,7 @@ package mount
 
 import (
 	"context"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 	"syscall"
 
 	"github.com/hanwen/go-fuse/v2/fuse"
@@ -20,6 +21,8 @@ const (
 // Lseek finds next data or hole segments after the specified offset
 // See https://man7.org/linux/man-pages/man2/lseek.2.html
 func (wfs *WFS) Lseek(cancel <-chan struct{}, in *fuse.LseekIn, out *fuse.LseekOut) fuse.Status {
+	wfs.concurrentOpLimit.WaitN(util.MyContext{cancel}, 1)
+
 	// not a documented feature
 	if in.Padding != 0 {
 		return fuse.EINVAL

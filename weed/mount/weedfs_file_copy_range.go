@@ -2,6 +2,7 @@ package mount
 
 import (
 	"context"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 	"net/http"
 
 	"github.com/hanwen/go-fuse/v2/fuse"
@@ -28,6 +29,8 @@ import (
  * glibc release branches.)
  */
 func (wfs *WFS) CopyFileRange(cancel <-chan struct{}, in *fuse.CopyFileRangeIn) (written uint32, code fuse.Status) {
+	wfs.concurrentOpLimit.WaitN(util.MyContext{cancel}, 1)
+
 	// flags must equal 0 for this syscall as of now
 	if in.Flags != 0 {
 		return 0, fuse.EINVAL

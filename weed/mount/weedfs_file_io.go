@@ -2,6 +2,7 @@ package mount
 
 import (
 	"github.com/hanwen/go-fuse/v2/fuse"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 )
 
 /**
@@ -61,6 +62,8 @@ import (
 	 * @param fi file information
 */
 func (wfs *WFS) Open(cancel <-chan struct{}, in *fuse.OpenIn, out *fuse.OpenOut) (status fuse.Status) {
+	wfs.concurrentOpLimit.WaitN(util.MyContext{cancel}, 1)
+
 	var fileHandle *FileHandle
 	fileHandle, status = wfs.AcquireHandle(in.NodeId, in.Uid, in.Gid)
 	if status == fuse.OK {

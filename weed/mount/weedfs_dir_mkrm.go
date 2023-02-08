@@ -7,6 +7,7 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 	"os"
 	"strings"
 	"syscall"
@@ -20,6 +21,7 @@ import (
  * correct directory type bits use  mode|S_IFDIR
  * */
 func (wfs *WFS) Mkdir(cancel <-chan struct{}, in *fuse.MkdirIn, name string, out *fuse.EntryOut) (code fuse.Status) {
+	wfs.concurrentOpLimit.WaitN(util.MyContext{cancel}, 1)
 
 	if wfs.IsOverQuota {
 		return fuse.Status(syscall.ENOSPC)

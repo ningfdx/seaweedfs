@@ -88,6 +88,7 @@ func (mc *MemChunk) SaveContent(saveFn SaveToStorageFunc) {
 	}
 	for t := mc.usage.head.next; t != mc.usage.tail; t = t.next {
 		reader := util.NewBytesReader(mc.buf[t.StartOffset:t.stopOffset])
+		// dirtyPages.saveChunkedFileIntervalToStorage
 		saveFn(reader, int64(mc.logicChunkIndex)*mc.chunkSize+t.StartOffset, t.Size(), func() {
 		})
 	}

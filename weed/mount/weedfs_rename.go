@@ -131,6 +131,8 @@ const (
 )
 
 func (wfs *WFS) Rename(cancel <-chan struct{}, in *fuse.RenameIn, oldName string, newName string) (code fuse.Status) {
+	wfs.concurrentOpLimit.WaitN(util.MyContext{cancel}, 1)
+
 	if wfs.IsOverQuota {
 		return fuse.Status(syscall.ENOSPC)
 	}
