@@ -131,6 +131,8 @@ const (
 )
 
 func (wfs *WFS) Rename(cancel <-chan struct{}, in *fuse.RenameIn, oldName string, newName string) (code fuse.Status) {
+	wfs.concurrentOpLimit.WaitN(util.MyContext{cancel}, 1)
+
 	if wfs.IsOverQuota {
 		return fuse.Status(syscall.ENOSPC)
 	}
@@ -164,8 +166,8 @@ func (wfs *WFS) Rename(cancel <-chan struct{}, in *fuse.RenameIn, oldName string
 
 	// update remote filer
 	err := wfs.WithFilerClient(true, func(client filer_pb.SeaweedFilerClient) error {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx, cc := context.WithCancel(context.Background())
+		defer cc()
 
 		request := &filer_pb.StreamRenameEntryRequest{
 			OldDirectory: string(oldDir),
@@ -182,6 +184,8 @@ func (wfs *WFS) Rename(cancel <-chan struct{}, in *fuse.RenameIn, oldName string
 		}
 
 		for {
+			wfs.concurrentOpLimit.WaitN(util.MyContext{cancel}, 1)
+
 			resp, recvErr := stream.Recv()
 			if recvErr != nil {
 				if recvErr == io.EOF {

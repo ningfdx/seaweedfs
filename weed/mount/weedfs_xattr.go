@@ -2,6 +2,7 @@ package mount
 
 import (
 	"github.com/hanwen/go-fuse/v2/fuse"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 	sys "golang.org/x/sys/unix"
 	"runtime"
 	"strings"
@@ -19,6 +20,7 @@ const (
 // number of bytes. If the buffer is too small, return ERANGE,
 // with the required buffer size.
 func (wfs *WFS) GetXAttr(cancel <-chan struct{}, header *fuse.InHeader, attr string, dest []byte) (size uint32, code fuse.Status) {
+	wfs.concurrentOpLimit.WaitN(util.MyContext{cancel}, 1)
 
 	if wfs.option.DisableXAttr {
 		return 0, fuse.Status(syscall.ENOTSUP)
@@ -74,6 +76,7 @@ func (wfs *WFS) GetXAttr(cancel <-chan struct{}, header *fuse.InHeader, attr str
 //	       Perform a pure replace operation, which fails if the named
 //	       attribute does not already exist.
 func (wfs *WFS) SetXAttr(cancel <-chan struct{}, input *fuse.SetXAttrIn, attr string, data []byte) fuse.Status {
+	wfs.concurrentOpLimit.WaitN(util.MyContext{cancel}, 1)
 
 	if wfs.option.DisableXAttr {
 		return fuse.Status(syscall.ENOTSUP)
@@ -139,6 +142,7 @@ func (wfs *WFS) SetXAttr(cancel <-chan struct{}, input *fuse.SetXAttrIn, attr st
 // slice, and return the number of bytes. If the buffer is too
 // small, return ERANGE, with the required buffer size.
 func (wfs *WFS) ListXAttr(cancel <-chan struct{}, header *fuse.InHeader, dest []byte) (n uint32, code fuse.Status) {
+	wfs.concurrentOpLimit.WaitN(util.MyContext{cancel}, 1)
 
 	if wfs.option.DisableXAttr {
 		return 0, fuse.Status(syscall.ENOTSUP)

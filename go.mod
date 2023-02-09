@@ -12,7 +12,7 @@ require (
 	github.com/aws/aws-sdk-go v1.44.189
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bwmarrin/snowflake v0.3.0
-	github.com/cespare/xxhash/v2 v2.1.2 // indirect
+	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/coreos/go-semver v0.3.0 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
@@ -143,12 +143,12 @@ require (
 	github.com/arangodb/go-driver v1.4.1
 	github.com/armon/go-metrics v0.4.1
 	github.com/fluent/fluent-logger-golang v1.9.0
-	github.com/go-redis/redis v6.15.9+incompatible
-	github.com/google/flatbuffers/go v0.0.0-20230108230133-3b8644d32c50
+	github.com/google/flatbuffers v22.10.26+incompatible
 	github.com/hanwen/go-fuse/v2 v2.1.1-0.20220627082937-d01fda7edf17
 	github.com/hashicorp/raft v1.3.11
 	github.com/hashicorp/raft-boltdb/v2 v2.2.2
 	github.com/rabbitmq/amqp091-go v1.5.0
+	github.com/redis/go-redis/v9 v9.0.2
 	github.com/schollz/progressbar/v3 v3.13.0
 	github.com/tikv/client-go/v2 v2.0.5
 	github.com/ydb-platform/ydb-go-sdk-auth-environ v0.1.2

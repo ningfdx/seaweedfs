@@ -89,6 +89,7 @@ type WFS struct {
 	fuseServer        *fuse.Server
 	IsOverQuota       bool
 	concurrentLimit   chan bool
+	concurrentOpLimit *rate.Limiter
 	writeLimiter      *rate.Limiter
 	readLimiter       *rate.Limiter
 	gcCh              chan struct{}
@@ -105,17 +106,20 @@ func NewSeaweedFileSystem(option *Option) *WFS {
 	if concurrentLimit <= 1 {
 		concurrentLimit = 2
 	}
+	opLimit := int(20 + concurrentLimit*10)
+	acturalLimit := int(42 + (concurrentLimit * 10))
 	wfs := &WFS{
-		RawFileSystem:   fuse.NewDefaultRawFileSystem(),
-		option:          option,
-		signature:       util.RandomInt32(),
-		inodeToPath:     NewInodeToPath(util.FullPath(option.FilerMountRootPath)),
-		fhmap:           NewFileHandleToInode(),
-		dhmap:           NewDirectoryHandleToInode(),
-		concurrentLimit: make(chan bool, concurrentLimit),
-		writeLimiter:    util.NewLimiter(int(concurrentLimit) * 52 * util.MBpsLimit),
-		readLimiter:     util.NewLimiter(int(concurrentLimit) * 104 * util.MBpsLimit),
-		gcCh:            make(chan struct{}, 5),
+		RawFileSystem:     fuse.NewDefaultRawFileSystem(),
+		option:            option,
+		signature:         util.RandomInt32(),
+		inodeToPath:       NewInodeToPath(util.FullPath(option.FilerMountRootPath)),
+		fhmap:             NewFileHandleToInode(),
+		dhmap:             NewDirectoryHandleToInode(),
+		concurrentLimit:   make(chan bool, concurrentLimit),
+		concurrentOpLimit: rate.NewLimiter(rate.Limit(opLimit), int(opLimit)),
+		writeLimiter:      util.NewLimiter(acturalLimit * util.MBpsLimit),
+		readLimiter:       util.NewLimiter(acturalLimit * util.MBpsLimit),
+		gcCh:              make(chan struct{}, 5),
 
 		rootPathQuotaMap: make(map[string]filer.QuotaInfo),
 		writingPathMap:   make(map[string]uint64),
