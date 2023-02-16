@@ -156,6 +156,17 @@ func (i *InodeToPath) MarkChildrenCached(fullpath util.FullPath) {
 	path.isChildrenCached = true
 }
 
+func (i *InodeToPath) MarkAllUnCached() {
+	i.RLock()
+	defer i.RUnlock()
+
+	for inode := range i.inode2path {
+		if path := i.inode2path[inode]; path != nil {
+			path.isChildrenCached = false
+		}
+	}
+}
+
 func (i *InodeToPath) IsChildrenCached(fullpath util.FullPath) bool {
 	i.RLock()
 	defer i.RUnlock()
