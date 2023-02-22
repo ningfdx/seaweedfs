@@ -5,12 +5,15 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 	"os"
 	"syscall"
 	"time"
 )
 
 func (wfs *WFS) GetAttr(cancel <-chan struct{}, input *fuse.GetAttrIn, out *fuse.AttrOut) (code fuse.Status) {
+	wfs.concurrentOpLimit.WaitN(util.MyContext{cancel}, 1)
+
 	if input.NodeId == 1 {
 		wfs.setRootAttr(out)
 		return fuse.OK
@@ -35,6 +38,7 @@ func (wfs *WFS) GetAttr(cancel <-chan struct{}, input *fuse.GetAttrIn, out *fuse
 }
 
 func (wfs *WFS) SetAttr(cancel <-chan struct{}, input *fuse.SetAttrIn, out *fuse.AttrOut) (code fuse.Status) {
+	wfs.concurrentOpLimit.WaitN(util.MyContext{cancel}, 1)
 
 	if wfs.IsOverQuota {
 		return fuse.Status(syscall.ENOSPC)

@@ -14,3 +14,23 @@ func NewLimiter(MBps int) *rate.Limiter {
 	l.AllowN(time.Now(), burst)
 	return l
 }
+
+type MyContext struct {
+	Cancel <-chan struct{}
+}
+
+func (ctx MyContext) Deadline() (deadline time.Time, ok bool) {
+	return
+}
+
+func (ctx MyContext) Done() <-chan struct{} {
+	return ctx.Cancel
+}
+
+func (ctx MyContext) Err() error {
+	return nil
+}
+
+func (ctx MyContext) Value(key any) any {
+	return nil
+}

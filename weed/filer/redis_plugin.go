@@ -1,9 +1,10 @@
 package filer
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"github.com/go-redis/redis"
+	"github.com/redis/go-redis/v9"
 	"strconv"
 	"strings"
 	"time"
@@ -16,19 +17,17 @@ type RedisClientOption struct {
 
 func RedisClientProvider(o *RedisClientOption) (*redis.ClusterClient, error) {
 	client := redis.NewClusterClient(&redis.ClusterOptions{
-		Addrs:              o.Addr,
-		Password:           o.Password,
-		MaxRetries:         5,
-		DialTimeout:        10 * time.Second,
-		ReadTimeout:        30 * time.Second,
-		WriteTimeout:       30 * time.Second,
-		PoolSize:           15,
-		PoolTimeout:        30 * time.Second,
-		IdleTimeout:        500 * time.Millisecond,
-		IdleCheckFrequency: 500 * time.Millisecond,
+		Addrs:        o.Addr,
+		Password:     o.Password,
+		MaxRetries:   5,
+		DialTimeout:  10 * time.Second,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		PoolSize:     15,
+		PoolTimeout:  30 * time.Second,
 	})
 
-	return client, client.Ping().Err()
+	return client, client.Ping(context.Background()).Err()
 }
 
 const (
@@ -56,7 +55,7 @@ func (p *QuotaPlugin) QuotaSizeSet(path string, size int64) (err error) {
 		return
 	}
 
-	return p.client.HSet(defineRedisKey(path), QuotaSizePrefix, size).Err()
+	return p.client.HSet(context.Background(), defineRedisKey(path), QuotaSizePrefix, size).Err()
 }
 
 func (p *QuotaPlugin) QuotaInodeSet(path string, size int64) (err error) {
@@ -64,7 +63,7 @@ func (p *QuotaPlugin) QuotaInodeSet(path string, size int64) (err error) {
 		return
 	}
 
-	return p.client.HSet(defineRedisKey(path), QuotaInodePrefix, size).Err()
+	return p.client.HSet(context.Background(), defineRedisKey(path), QuotaInodePrefix, size).Err()
 }
 
 func (p *QuotaPlugin) SizeIncrement(path string, size int64) (res int64, err error) {
@@ -72,7 +71,7 @@ func (p *QuotaPlugin) SizeIncrement(path string, size int64) (res int64, err err
 		return
 	}
 
-	return p.client.HIncrBy(defineRedisKey(path), UsedSizePrefix, size).Result()
+	return p.client.HIncrBy(context.Background(), defineRedisKey(path), UsedSizePrefix, size).Result()
 }
 
 func (p *QuotaPlugin) InodeIncrement(path string, size int64) (res int64, err error) {
@@ -80,11 +79,11 @@ func (p *QuotaPlugin) InodeIncrement(path string, size int64) (res int64, err er
 		return
 	}
 
-	return p.client.HIncrBy(defineRedisKey(path), UsedInodePrefix, size).Result()
+	return p.client.HIncrBy(context.Background(), defineRedisKey(path), UsedInodePrefix, size).Result()
 }
 
 func (p *QuotaPlugin) GetAll(path string) (quotaSize, quotaInode, size, inode int64, err error) {
-	res, err := p.client.HGetAll(defineRedisKey(path)).Result()
+	res, err := p.client.HGetAll(context.Background(), defineRedisKey(path)).Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
 			err = nil
@@ -121,7 +120,7 @@ func (p *QuotaPlugin) PathEveryDayHighestUsageSizeSet(dayPath string, path strin
 	dayPath = defineUserUsageRedisKey(dayPath)
 	path = strings.Trim(path, "/")
 
-	res, err := p.client.HGet(dayPath, path).Result()
+	res, err := p.client.HGet(context.Background(), dayPath, path).Result()
 	if err != nil && !errors.Is(err, redis.Nil) {
 		return fmt.Errorf("failed to hget %s-%s, %s", dayPath, path, err.Error())
 	}
@@ -130,5 +129,5 @@ func (p *QuotaPlugin) PathEveryDayHighestUsageSizeSet(dayPath string, path strin
 		return nil
 	}
 
-	return p.client.HSet(dayPath, path, size).Err()
+	return p.client.HSet(context.Background(), dayPath, path, size).Err()
 }

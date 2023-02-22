@@ -6,6 +6,7 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/mount/meta_cache"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 	"math"
 	"sync"
 )
@@ -85,6 +86,8 @@ func (wfs *WFS) ReleaseDirectoryHandle(dhid DirectoryHandleId) {
  * passed to readdir, releasedir and fsyncdir.
  */
 func (wfs *WFS) OpenDir(cancel <-chan struct{}, input *fuse.OpenIn, out *fuse.OpenOut) (code fuse.Status) {
+	wfs.concurrentOpLimit.WaitN(util.MyContext{cancel}, 1)
+
 	if !wfs.inodeToPath.HasInode(input.NodeId) {
 		return fuse.ENOENT
 	}
@@ -130,10 +133,14 @@ func (wfs *WFS) FsyncDir(cancel <-chan struct{}, input *fuse.FsyncIn) (code fuse
  * '1'.
  */
 func (wfs *WFS) ReadDir(cancel <-chan struct{}, input *fuse.ReadIn, out *fuse.DirEntryList) (code fuse.Status) {
+	wfs.concurrentOpLimit.WaitN(util.MyContext{cancel}, 1)
+
 	return wfs.doReadDirectory(input, out, false)
 }
 
 func (wfs *WFS) ReadDirPlus(cancel <-chan struct{}, input *fuse.ReadIn, out *fuse.DirEntryList) (code fuse.Status) {
+	wfs.concurrentOpLimit.WaitN(util.MyContext{cancel}, 1)
+
 	return wfs.doReadDirectory(input, out, true)
 }
 

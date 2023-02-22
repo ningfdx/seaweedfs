@@ -69,6 +69,8 @@ func (wfs *WFS) StatFs(cancel <-chan struct{}, in *fuse.InHeader, out *fuse.Stat
 		out.NameLen = 1024
 		out.Frsize = uint32(blockSize)
 
+		wfs.inodeToPath.MarkAllUnCached()
+
 		return fuse.OK
 	}
 

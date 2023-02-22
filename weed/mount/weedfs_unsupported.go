@@ -1,6 +1,9 @@
 package mount
 
-import "github.com/hanwen/go-fuse/v2/fuse"
+import (
+	"github.com/hanwen/go-fuse/v2/fuse"
+	"github.com/seaweedfs/seaweedfs/weed/util"
+)
 
 // https://github.com/libfuse/libfuse/blob/48ae2e72b39b6a31cb2194f6f11786b7ca06aac6/include/fuse.h#L778
 
@@ -17,6 +20,8 @@ func (wfs *WFS) Fallocate(cancel <-chan struct{}, in *fuse.FallocateIn) (code fu
 }
 
 func (wfs *WFS) GetLk(cancel <-chan struct{}, in *fuse.LkIn, out *fuse.LkOut) (code fuse.Status) {
+	wfs.concurrentOpLimit.WaitN(util.MyContext{cancel}, 1)
+
 	return fuse.ENOSYS
 }
 
