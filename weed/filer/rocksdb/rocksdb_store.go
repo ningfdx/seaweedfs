@@ -145,16 +145,16 @@ func (store *RocksDBStore) FindEntry(ctx context.Context, fullpath weed_util.Ful
 	return entry, nil
 }
 
-func (store *RocksDBStore) DeleteEntry(ctx context.Context, fullpath weed_util.FullPath) (err error) {
+func (store *RocksDBStore) DeleteEntry(ctx context.Context, fullpath weed_util.FullPath) (deletedCount int64, err error) {
 	dir, name := fullpath.DirAndName()
 	key := genKey(dir, name)
 
 	err = store.db.Delete(store.wo, key)
 	if err != nil {
-		return fmt.Errorf("delete %s : %v", fullpath, err)
+		return 0, fmt.Errorf("delete %s : %v", fullpath, err)
 	}
 
-	return nil
+	return 0, nil
 }
 
 func (store *RocksDBStore) DeleteFolderChildren(ctx context.Context, fullpath weed_util.FullPath) (err error) {

@@ -12,7 +12,6 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
 	environ "github.com/ydb-platform/ydb-go-sdk-auth-environ"
-	"github.com/ydb-platform/ydb-go-sdk/v3"
 	"github.com/ydb-platform/ydb-go-sdk/v3/sugar"
 	"github.com/ydb-platform/ydb-go-sdk/v3/table"
 	"github.com/ydb-platform/ydb-go-sdk/v3/table/result"
@@ -200,7 +199,7 @@ func (store *YdbStore) FindEntry(ctx context.Context, fullpath util.FullPath) (e
 	return entry, nil
 }
 
-func (store *YdbStore) DeleteEntry(ctx context.Context, fullpath util.FullPath) (err error) {
+func (store *YdbStore) DeleteEntry(ctx context.Context, fullpath util.FullPath) (deletedCount int64, err error) {
 	dir, name := fullpath.DirAndName()
 	tablePathPrefix, shortDir := store.getPrefix(ctx, &dir)
 	query := withPragma(tablePathPrefix, deleteQuery)
@@ -208,7 +207,7 @@ func (store *YdbStore) DeleteEntry(ctx context.Context, fullpath util.FullPath) 
 		table.ValueParam("$dir_hash", types.Int64Value(util.HashStringToLong(*shortDir))),
 		table.ValueParam("$name", types.UTF8Value(name)))
 
-	return store.doTxOrDB(ctx, query, queryParams, rwTX, nil)
+	return 0, store.doTxOrDB(ctx, query, queryParams, rwTX, nil)
 }
 
 func (store *YdbStore) DeleteFolderChildren(ctx context.Context, fullpath util.FullPath) (err error) {

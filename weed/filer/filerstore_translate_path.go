@@ -88,9 +88,10 @@ func (t *FilerStorePathTranslator) FindEntry(ctx context.Context, fp util.FullPa
 	return
 }
 
-func (t *FilerStorePathTranslator) DeleteEntry(ctx context.Context, fp util.FullPath) (err error) {
+func (t *FilerStorePathTranslator) DeleteEntry(ctx context.Context, fp util.FullPath) (deletedCount int64, err error) {
 	newFullPath := t.translatePath(fp)
-	return t.actualStore.DeleteEntry(ctx, newFullPath)
+	deletedCount, err = t.actualStore.DeleteEntry(ctx, newFullPath)
+	return
 }
 
 func (t *FilerStorePathTranslator) DeleteOneEntry(ctx context.Context, existingEntry *Entry) (err error) {
@@ -98,7 +99,8 @@ func (t *FilerStorePathTranslator) DeleteOneEntry(ctx context.Context, existingE
 	previousPath := t.changeEntryPath(existingEntry)
 	defer t.recoverEntryPath(existingEntry, previousPath)
 
-	return t.actualStore.DeleteEntry(ctx, existingEntry.FullPath)
+	_, err = t.actualStore.DeleteEntry(ctx, existingEntry.FullPath)
+	return
 }
 
 func (t *FilerStorePathTranslator) DeleteFolderChildren(ctx context.Context, fp util.FullPath) (err error) {

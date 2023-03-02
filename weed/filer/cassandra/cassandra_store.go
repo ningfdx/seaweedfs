@@ -149,7 +149,7 @@ func (store *CassandraStore) FindEntry(ctx context.Context, fullpath util.FullPa
 	return entry, nil
 }
 
-func (store *CassandraStore) DeleteEntry(ctx context.Context, fullpath util.FullPath) error {
+func (store *CassandraStore) DeleteEntry(ctx context.Context, fullpath util.FullPath) (deletedCount int64, err error) {
 
 	dir, name := fullpath.DirAndName()
 	if dirHash, ok := store.isSuperLargeDirectory(dir); ok {
@@ -159,10 +159,10 @@ func (store *CassandraStore) DeleteEntry(ctx context.Context, fullpath util.Full
 	if err := store.session.Query(
 		"DELETE FROM filemeta WHERE directory=? AND name=?",
 		dir, name).Exec(); err != nil {
-		return fmt.Errorf("delete %s : %v", fullpath, err)
+		return 0, fmt.Errorf("delete %s : %v", fullpath, err)
 	}
 
-	return nil
+	return 0, nil
 }
 
 func (store *CassandraStore) DeleteFolderChildren(ctx context.Context, fullpath util.FullPath) error {

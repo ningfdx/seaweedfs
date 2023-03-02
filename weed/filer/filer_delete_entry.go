@@ -2,6 +2,7 @@ package filer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
@@ -122,10 +123,11 @@ func (f *Filer) doDeleteEntryMetaAndData(ctx context.Context, entry *Entry, shou
 
 	glog.V(3).Infof("deleting entry %v, delete chunks: %v", entry.FullPath, shouldDeleteChunks)
 
-	if storeDeletionErr := f.Store.DeleteOneEntry(ctx, entry); storeDeletionErr != nil {
+	deletedCount, storeDeletionErr := f.Store.DeleteOneEntry(ctx, entry)
+	if storeDeletionErr != nil && !errors.Is(storeDeletionErr, ErrAlreadyDeleted) {
 		return fmt.Errorf("filer store delete: %v", storeDeletionErr)
 	}
-	if !entry.IsDirectory() {
+	if deletedCount > 0 && !entry.IsDirectory() {
 		f.NotifyUpdateEvent(ctx, entry, nil, shouldDeleteChunks, isFromOtherCluster, signatures)
 	}
 

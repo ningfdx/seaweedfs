@@ -250,17 +250,17 @@ func (store *ArangodbStore) FindEntry(ctx context.Context, fullpath util.FullPat
 	return entry, nil
 }
 
-func (store *ArangodbStore) DeleteEntry(ctx context.Context, fullpath util.FullPath) (err error) {
+func (store *ArangodbStore) DeleteEntry(ctx context.Context, fullpath util.FullPath) (deletedCount int64, err error) {
 	targetCollection, err := store.extractBucketCollection(ctx, fullpath)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	_, err = targetCollection.RemoveDocument(ctx, hashString(string(fullpath)))
 	if err != nil && !driver.IsNotFound(err) {
 		glog.Errorf("find %s: %v", fullpath, err)
-		return fmt.Errorf("delete %s : %v", fullpath, err)
+		return 0, fmt.Errorf("delete %s : %v", fullpath, err)
 	}
-	return nil
+	return 0, nil
 }
 
 // this runs in log time

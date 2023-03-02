@@ -105,8 +105,8 @@ func (store *HbaseStore) FindEntry(ctx context.Context, path util.FullPath) (ent
 	return entry, nil
 }
 
-func (store *HbaseStore) DeleteEntry(ctx context.Context, path util.FullPath) (err error) {
-	return store.doDelete(ctx, store.cfMetaDir, []byte(path))
+func (store *HbaseStore) DeleteEntry(ctx context.Context, path util.FullPath) (deletedCount int64, err error) {
+	return 0, store.doDelete(ctx, store.cfMetaDir, []byte(path))
 }
 
 func (store *HbaseStore) DeleteFolderChildren(ctx context.Context, path util.FullPath) (err error) {

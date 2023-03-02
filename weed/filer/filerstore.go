@@ -14,6 +14,8 @@ var (
 	ErrUnsupportedSuperLargeDirectoryListing = errors.New("unsupported super large directory listing")
 	ErrKvNotImplemented                      = errors.New("kv not implemented yet")
 	ErrKvNotFound                            = errors.New("kv: not found")
+
+	ErrAlreadyDeleted = errors.New("file or directory already deleted")
 )
 
 type ListEachEntryFunc func(entry *Entry) bool
@@ -27,7 +29,7 @@ type FilerStore interface {
 	UpdateEntry(context.Context, *Entry) (err error)
 	// err == filer_pb.ErrNotFound if not found
 	FindEntry(context.Context, util.FullPath) (entry *Entry, err error)
-	DeleteEntry(context.Context, util.FullPath) (err error)
+	DeleteEntry(context.Context, util.FullPath) (deletedCount int64, err error)
 	DeleteFolderChildren(context.Context, util.FullPath) (err error)
 	ListDirectoryEntries(ctx context.Context, dirPath util.FullPath, startFileName string, includeStartFile bool, limit int64, eachEntryFunc ListEachEntryFunc) (lastFileName string, err error)
 	ListDirectoryPrefixedEntries(ctx context.Context, dirPath util.FullPath, startFileName string, includeStartFile bool, limit int64, prefix string, eachEntryFunc ListEachEntryFunc) (lastFileName string, err error)

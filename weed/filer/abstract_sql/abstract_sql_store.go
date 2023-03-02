@@ -241,26 +241,26 @@ func (store *AbstractSqlStore) FindEntry(ctx context.Context, fullpath util.Full
 	return entry, nil
 }
 
-func (store *AbstractSqlStore) DeleteEntry(ctx context.Context, fullpath util.FullPath) error {
+func (store *AbstractSqlStore) DeleteEntry(ctx context.Context, fullpath util.FullPath) (deletedCount int64, err error) {
 
 	db, bucket, shortPath, err := store.getTxOrDB(ctx, fullpath, false)
 	if err != nil {
-		return fmt.Errorf("findDB %s : %v", fullpath, err)
+		return 0, fmt.Errorf("findDB %s : %v", fullpath, err)
 	}
 
 	dir, name := shortPath.DirAndName()
 
 	res, err := db.ExecContext(ctx, store.GetSqlDelete(bucket), util.HashStringToLong(dir), name, dir)
 	if err != nil {
-		return fmt.Errorf("delete %s: %s", fullpath, err)
+		return 0, fmt.Errorf("delete %s: %s", fullpath, err)
 	}
 
 	_, err = res.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("delete %s but no rows affected: %s", fullpath, err)
+		return 0, fmt.Errorf("delete %s but no rows affected: %s", fullpath, err)
 	}
 
-	return nil
+	return 0, nil
 }
 
 func (store *AbstractSqlStore) DeleteFolderChildren(ctx context.Context, fullpath util.FullPath) error {

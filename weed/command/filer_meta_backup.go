@@ -171,7 +171,8 @@ func (metaBackup *FilerMetaBackupOptions) streamMetadataBackup() error {
 			return store.InsertEntry(ctx, entry)
 		} else if filer_pb.IsDelete(resp) {
 			println("-", util.FullPath(resp.Directory).Child(message.OldEntry.Name))
-			return store.DeleteEntry(ctx, util.FullPath(resp.Directory).Child(message.OldEntry.Name))
+			_, err = store.DeleteEntry(ctx, util.FullPath(resp.Directory).Child(message.OldEntry.Name))
+			return err
 		} else if filer_pb.IsUpdate(resp) {
 			println("~", util.FullPath(message.NewParentPath).Child(message.NewEntry.Name))
 			entry := filer.FromPbEntry(message.NewParentPath, message.NewEntry)
@@ -179,7 +180,7 @@ func (metaBackup *FilerMetaBackupOptions) streamMetadataBackup() error {
 		} else {
 			// renaming
 			println("-", util.FullPath(resp.Directory).Child(message.OldEntry.Name))
-			if err := store.DeleteEntry(ctx, util.FullPath(resp.Directory).Child(message.OldEntry.Name)); err != nil {
+			if _, err := store.DeleteEntry(ctx, util.FullPath(resp.Directory).Child(message.OldEntry.Name)); err != nil {
 				return err
 			}
 			println("+", util.FullPath(message.NewParentPath).Child(message.NewEntry.Name))

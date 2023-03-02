@@ -156,13 +156,13 @@ func (store *ElasticStore) FindEntry(ctx context.Context, fullpath weed_util.Ful
 	return nil, filer_pb.ErrNotFound
 }
 
-func (store *ElasticStore) DeleteEntry(ctx context.Context, fullpath weed_util.FullPath) (err error) {
+func (store *ElasticStore) DeleteEntry(ctx context.Context, fullpath weed_util.FullPath) (deletedCount int64, err error) {
 	index := getIndex(fullpath, false)
 	id := weed_util.Md5String([]byte(fullpath))
 	if strings.Count(string(fullpath), "/") == 1 {
-		return store.deleteIndex(ctx, index)
+		return 0, store.deleteIndex(ctx, index)
 	}
-	return store.deleteEntry(ctx, index, id)
+	return 0, store.deleteEntry(ctx, index, id)
 }
 
 func (store *ElasticStore) deleteIndex(ctx context.Context, index string) (err error) {

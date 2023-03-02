@@ -93,27 +93,27 @@ func (store *UniversalRedis3Store) FindEntry(ctx context.Context, fullpath util.
 	return entry, nil
 }
 
-func (store *UniversalRedis3Store) DeleteEntry(ctx context.Context, fullpath util.FullPath) (err error) {
+func (store *UniversalRedis3Store) DeleteEntry(ctx context.Context, fullpath util.FullPath) (deletedCount int64, err error) {
 
 	_, err = store.Client.Del(ctx, genDirectoryListKey(string(fullpath))).Result()
 	if err != nil {
-		return fmt.Errorf("delete dir list %s : %v", fullpath, err)
+		return 0, fmt.Errorf("delete dir list %s : %v", fullpath, err)
 	}
 
 	_, err = store.Client.Del(ctx, string(fullpath)).Result()
 	if err != nil {
-		return fmt.Errorf("delete %s : %v", fullpath, err)
+		return 0, fmt.Errorf("delete %s : %v", fullpath, err)
 	}
 
 	dir, name := fullpath.DirAndName()
 
 	if name != "" {
 		if err = removeChild(ctx, store, genDirectoryListKey(dir), name); err != nil {
-			return fmt.Errorf("DeleteEntry %s in parent dir: %v", fullpath, err)
+			return 0, fmt.Errorf("DeleteEntry %s in parent dir: %v", fullpath, err)
 		}
 	}
 
-	return nil
+	return 0, nil
 }
 
 func (store *UniversalRedis3Store) DeleteFolderChildren(ctx context.Context, fullpath util.FullPath) (err error) {

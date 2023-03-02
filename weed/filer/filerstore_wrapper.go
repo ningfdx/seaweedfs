@@ -22,7 +22,7 @@ var (
 type VirtualFilerStore interface {
 	FilerStore
 	DeleteHardLink(ctx context.Context, hardLinkId HardLinkId) error
-	DeleteOneEntry(ctx context.Context, entry *Entry) error
+	DeleteOneEntry(ctx context.Context, entry *Entry) (deletedCount int64, err error)
 	AddPathSpecificStore(path string, storeId string, store FilerStore)
 	OnBucketCreation(bucket string)
 	OnBucketDeletion(bucket string)
@@ -172,7 +172,7 @@ func (fsw *FilerStoreWrapper) FindEntry(ctx context.Context, fp util.FullPath) (
 	return
 }
 
-func (fsw *FilerStoreWrapper) DeleteEntry(ctx context.Context, fp util.FullPath) (err error) {
+func (fsw *FilerStoreWrapper) DeleteEntry(ctx context.Context, fp util.FullPath) (deletedCount int64, err error) {
 	actualStore := fsw.getActualStore(fp)
 	stats.FilerStoreCounter.WithLabelValues(actualStore.GetName(), "delete").Inc()
 	start := time.Now()
@@ -182,21 +182,22 @@ func (fsw *FilerStoreWrapper) DeleteEntry(ctx context.Context, fp util.FullPath)
 
 	existingEntry, findErr := fsw.FindEntry(ctx, fp)
 	if findErr == filer_pb.ErrNotFound {
-		return nil
+		return 0, nil
 	}
 	if len(existingEntry.HardLinkId) != 0 {
 		// remove hard link
 		glog.V(4).Infof("DeleteHardLink %s", existingEntry.FullPath)
 		if err = fsw.DeleteHardLink(ctx, existingEntry.HardLinkId); err != nil {
-			return err
+			return 0, err
 		}
 	}
 
 	// glog.V(4).Infof("DeleteEntry %s", fp)
-	return actualStore.DeleteEntry(ctx, fp)
+	deletedCount, err = actualStore.DeleteEntry(ctx, fp)
+	return
 }
 
-func (fsw *FilerStoreWrapper) DeleteOneEntry(ctx context.Context, existingEntry *Entry) (err error) {
+func (fsw *FilerStoreWrapper) DeleteOneEntry(ctx context.Context, existingEntry *Entry) (deletedCount int64, err error) {
 	actualStore := fsw.getActualStore(existingEntry.FullPath)
 	stats.FilerStoreCounter.WithLabelValues(actualStore.GetName(), "delete").Inc()
 	start := time.Now()
@@ -208,7 +209,7 @@ func (fsw *FilerStoreWrapper) DeleteOneEntry(ctx context.Context, existingEntry 
 		// remove hard link
 		glog.V(4).Infof("DeleteHardLink %s", existingEntry.FullPath)
 		if err = fsw.DeleteHardLink(ctx, existingEntry.HardLinkId); err != nil {
-			return err
+			return 0, err
 		}
 	}
 

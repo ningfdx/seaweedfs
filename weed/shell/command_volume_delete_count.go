@@ -62,6 +62,11 @@ func (c *commandVolumeDeleteList) Do(args []string, commandEnv *CommandEnv, writ
 	}
 
 	c.writeTopologyInfo(writer, topologyInfo, volumeSizeLimitMb, *verbosityLevel)
+	pusher := push.New("localhost:9091", "shell").Gatherer(GatherShell)
+	err = pusher.Push()
+	if err != nil {
+		fmt.Println("Failed to push to gateway, " + err.Error())
+	}
 	return nil
 }
 
@@ -132,13 +137,13 @@ func (c *commandVolumeDeleteList) writeDiskInfo(writer io.Writer, t *master_pb.D
 
 func getVolumeInformationMessage(writer io.Writer, t *master_pb.VolumeInformationMessage, verbosityLevel int, dataNodeId string) {
 	output(verbosityLevel >= 5, writer, "DataNodeId: %s; VolumeId: %d, volume Deletebytes: %d\n", dataNodeId, t.Id, t.DeletedByteCount)
-	VolumeServerDeleteSizeGaugeShell.WithLabelValues(dataNodeId + fmt.Sprintf("-%d", t.Id)).Set(float64(t.DeletedByteCount))
+	VolumeServerDeleteSizeGaugeShell.WithLabelValues(dataNodeId + fmt.Sprintf("=-%d", t.Id)).Set(float64(t.DeletedByteCount))
 
-	pusher := push.New("localhost:9091", "shell").Gatherer(GatherShell)
-	err := pusher.Push()
-	if err != nil {
-		fmt.Println("Failed to push to gateway, " + err.Error())
-	}
+	//	pusher := push.New("localhost:9091", "shell").Gatherer(GatherShell)
+	//	err := pusher.Push()
+	//	if err != nil {
+	//		fmt.Println("Failed to push to gateway, " + err.Error())
+	//	}
 
 	return
 }

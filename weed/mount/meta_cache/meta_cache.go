@@ -69,15 +69,19 @@ func (mc *MetaCache) AtomicUpdateEntryFromFiler(ctx context.Context, oldPath uti
 	//mc.Lock()
 	//defer mc.Unlock()
 
-	oldDir, _ := oldPath.DirAndName()
-	if mc.isCachedFn(util.FullPath(oldDir)) {
+	entry, err := mc.FindEntry(ctx, oldPath)
+	if err != nil && err != filer_pb.ErrNotFound {
+		glog.Errorf("Metacache: find entry error: %v", err)
+		return err
+	}
+	if entry != nil {
 		if oldPath != "" {
 			if newEntry != nil && oldPath == newEntry.FullPath {
 				// skip the unnecessary deletion
 				// leave the update to the following InsertEntry operation
 			} else {
 				glog.V(3).Infof("DeleteEntry %s", oldPath)
-				if err := mc.localStore.DeleteEntry(ctx, oldPath); err != nil {
+				if _, err := mc.localStore.DeleteEntry(ctx, oldPath); err != nil {
 					return err
 				}
 			}
@@ -116,7 +120,8 @@ func (mc *MetaCache) FindEntry(ctx context.Context, fp util.FullPath) (entry *fi
 func (mc *MetaCache) DeleteEntry(ctx context.Context, fp util.FullPath) (err error) {
 	//mc.Lock()
 	//defer mc.Unlock()
-	return mc.localStore.DeleteEntry(ctx, fp)
+	_, err = mc.localStore.DeleteEntry(ctx, fp)
+	return
 }
 func (mc *MetaCache) DeleteFolderChildren(ctx context.Context, fp util.FullPath) (err error) {
 	//mc.Lock()
