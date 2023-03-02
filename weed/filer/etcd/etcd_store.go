@@ -120,14 +120,14 @@ func (store *EtcdStore) FindEntry(ctx context.Context, fullpath weed_util.FullPa
 	return entry, nil
 }
 
-func (store *EtcdStore) DeleteEntry(ctx context.Context, fullpath weed_util.FullPath) (err error) {
+func (store *EtcdStore) DeleteEntry(ctx context.Context, fullpath weed_util.FullPath) (deletedCount int64, err error) {
 	key := genKey(fullpath.DirAndName())
 
 	if _, err := store.client.Delete(ctx, string(key)); err != nil {
-		return fmt.Errorf("delete %s : %v", fullpath, err)
+		return 0, fmt.Errorf("delete %s : %v", fullpath, err)
 	}
 
-	return nil
+	return 0, nil
 }
 
 func (store *EtcdStore) DeleteFolderChildren(ctx context.Context, fullpath weed_util.FullPath) (err error) {

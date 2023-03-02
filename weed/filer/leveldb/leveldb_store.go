@@ -131,15 +131,15 @@ func (store *LevelDBStore) FindEntry(ctx context.Context, fullpath weed_util.Ful
 	return entry, nil
 }
 
-func (store *LevelDBStore) DeleteEntry(ctx context.Context, fullpath weed_util.FullPath) (err error) {
+func (store *LevelDBStore) DeleteEntry(ctx context.Context, fullpath weed_util.FullPath) (deletedCount int64, err error) {
 	key := genKey(fullpath.DirAndName())
 
 	err = store.db.Delete(key, nil)
 	if err != nil {
-		return fmt.Errorf("delete %s : %v", fullpath, err)
+		return 0, fmt.Errorf("delete %s : %v", fullpath, err)
 	}
 
-	return nil
+	return 0, nil
 }
 
 func (store *LevelDBStore) DeleteFolderChildren(ctx context.Context, fullpath weed_util.FullPath) (err error) {
