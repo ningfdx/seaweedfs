@@ -151,8 +151,8 @@ func NewSeaweedFileSystem(option *Option) *WFS {
 }
 
 func (wfs *WFS) StartBackgroundTasks() {
-	startTime := time.Now()
-	go meta_cache.SubscribeMetaEvents(wfs.metaCache, wfs.signature, wfs, wfs.option.FilerMountRootPath, startTime.UnixNano())
+	//startTime := time.Now()
+	//go meta_cache.SubscribeMetaEvents(wfs.metaCache, wfs.signature, wfs, wfs.option.FilerMountRootPath, startTime.UnixNano())
 	go wfs.loopCheckQuota()
 	go wfs.gcHelper()
 	err := wfs.PrepareForQuota()

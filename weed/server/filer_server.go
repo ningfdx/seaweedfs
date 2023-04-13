@@ -166,7 +166,7 @@ func NewFilerServer(defaultMux, readonlyMux *http.ServeMux, option *FilerOption)
 	// TODO deprecated, will be be removed after 2020-12-31
 	// replaced by https://github.com/seaweedfs/seaweedfs/wiki/Path-Specific-Configuration
 	// fs.filer.FsyncBuckets = v.GetStringSlice("filer.options.buckets_fsync")
-	isFresh := fs.filer.LoadConfiguration(v)
+	_ = fs.filer.LoadConfiguration(v)
 
 	notification.LoadConfiguration(v, "notification.")
 
@@ -179,15 +179,15 @@ func NewFilerServer(defaultMux, readonlyMux *http.ServeMux, option *FilerOption)
 		readonlyMux.HandleFunc("/", fs.readonlyFilerHandler)
 	}
 
-	existingNodes := fs.filer.ListExistingPeerUpdates()
-	startFromTime := time.Now().Add(-filer.LogFlushInterval)
-	if isFresh {
-		glog.V(0).Infof("%s bootstrap from peers %+v", option.Host, existingNodes)
-		if err := fs.filer.MaybeBootstrapFromPeers(option.Host, existingNodes, startFromTime); err != nil {
-			glog.Fatalf("%s bootstrap from %+v", option.Host, existingNodes)
-		}
-	}
-	fs.filer.AggregateFromPeers(option.Host, existingNodes, startFromTime)
+	//existingNodes := fs.filer.ListExistingPeerUpdates()
+	//startFromTime := time.Now().Add(-filer.LogFlushInterval)
+	//if isFresh {
+	//	glog.V(0).Infof("%s bootstrap from peers %+v", option.Host, existingNodes)
+	//	if err := fs.filer.MaybeBootstrapFromPeers(option.Host, existingNodes, startFromTime); err != nil {
+	//		glog.Fatalf("%s bootstrap from %+v", option.Host, existingNodes)
+	//	}
+	//}
+	//fs.filer.AggregateFromPeers(option.Host, existingNodes, startFromTime)
 
 	fs.filer.LoadFilerConf()
 

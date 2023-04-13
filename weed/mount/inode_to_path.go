@@ -19,6 +19,7 @@ type InodeEntry struct {
 	nlookup          uint64
 	isDirectory      bool
 	isChildrenCached bool
+	cacheTime        time.Time
 }
 
 func (ie *InodeEntry) removeOnePath(p util.FullPath) bool {
@@ -48,7 +49,7 @@ func NewInodeToPath(root util.FullPath) *InodeToPath {
 		inode2path: make(map[uint64]*InodeEntry),
 		path2inode: make(map[util.FullPath]uint64),
 	}
-	t.inode2path[1] = &InodeEntry{[]util.FullPath{root}, 1, true, false}
+	t.inode2path[1] = &InodeEntry{[]util.FullPath{root}, 1, true, false, time.Now()}
 	t.path2inode[root] = 1
 	return t
 }
@@ -92,9 +93,9 @@ func (i *InodeToPath) Lookup(path util.FullPath, unixTime int64, isDirectory boo
 		}
 	} else {
 		if !isLookup {
-			i.inode2path[inode] = &InodeEntry{[]util.FullPath{path}, 0, isDirectory, false}
+			i.inode2path[inode] = &InodeEntry{[]util.FullPath{path}, 0, isDirectory, false, time.Now()}
 		} else {
-			i.inode2path[inode] = &InodeEntry{[]util.FullPath{path}, 1, isDirectory, false}
+			i.inode2path[inode] = &InodeEntry{[]util.FullPath{path}, 1, isDirectory, false, time.Now()}
 		}
 	}
 
@@ -154,6 +155,7 @@ func (i *InodeToPath) MarkChildrenCached(fullpath util.FullPath) {
 	}
 	path, found := i.inode2path[inode]
 	path.isChildrenCached = true
+	path.cacheTime = time.Now()
 }
 
 func (i *InodeToPath) MarkAllUnCached() {
@@ -176,7 +178,7 @@ func (i *InodeToPath) IsChildrenCached(fullpath util.FullPath) bool {
 	}
 	path, found := i.inode2path[inode]
 	if found {
-		return path.isChildrenCached
+		return path.isChildrenCached && path.cacheTime.Add(time.Second*5).After(time.Now())
 	}
 	return false
 }
