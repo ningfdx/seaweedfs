@@ -72,6 +72,7 @@ type FilerOption struct {
 	ConcurrentUploadLimit int64
 	ShowUIDirectoryDelete bool
 	DownloadMaxBytesPs    int64
+	DiskType              string
 }
 
 type FilerServer struct {
@@ -211,9 +212,6 @@ func (fs *FilerServer) checkWithMaster() {
 					return fmt.Errorf("get master %s configuration: %v", master, err)
 				}
 				fs.metricsAddress, fs.metricsIntervalSec = resp.MetricsAddress, int(resp.MetricsIntervalSeconds)
-				if fs.option.DefaultReplication == "" {
-					fs.option.DefaultReplication = resp.DefaultReplication
-				}
 				return nil
 			})
 			if readErr == nil {
