@@ -4,7 +4,7 @@ client-ldflags="-X 'github.com/seaweedfs/seaweedfs/weed/util.BuiltType=client' -
 
 SOURCE_DIR = .
 
-all: install
+all: build
 client: client-install
 
 client-install:
@@ -18,3 +18,9 @@ full_install:
 
 tests:
 	cd weed; go test -tags "elastic gocdk sqlite ydb tikv" -v ./...
+
+build:
+	docker run --rm -w /code/ -v /tmp/go_mod:/root/go/pkg/mod -v /home/nfd/nfd/poyehali/seaweedfs/:/code ningfd/golang:1.9-ubuntu20.04 sh -c "make do_build"
+
+do_build:
+	cd weed; go build -o weed -ldflags ${ldflags} .
