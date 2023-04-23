@@ -282,17 +282,31 @@ func (fo *FilerOptions) startFiler() {
 
 	// starting grpc server
 	grpcPort := *fo.portGrpc
-	grpcL, grpcLocalL, err := util.NewIpAndLocalListeners(*fo.bindIp, grpcPort, 0)
-	if err != nil {
-		glog.Fatalf("failed to listen on grpc port %d: %v", grpcPort, err)
-	}
-	grpcS := pb.NewGrpcServer(security.LoadServerTLS(util.GetViper(), "grpc.filer"))
-	filer_pb.RegisterSeaweedFilerServer(grpcS, fs)
-	reflection.Register(grpcS)
-	if grpcLocalL != nil {
-		go grpcS.Serve(grpcLocalL)
-	}
-	go grpcS.Serve(grpcL)
+	go func() {
+		for {
+			//glog.V(0).Infoln("start grpc server !!!!!!!!!!!!!!!!!")
+			grpcL, _, err := util.NewIpAndLocalListeners(*fo.bindIp, grpcPort, 0)
+			if err != nil {
+				glog.V(0).Infoln("failed to listen on grpc port %d: %v", grpcPort, err)
+			}
+			grpcS := pb.NewGrpcServer(security.LoadServerTLS(util.GetViper(), "grpc.filer"))
+			filer_pb.RegisterSeaweedFilerServer(grpcS, fs)
+			reflection.Register(grpcS)
+
+			//go func() {
+			//	time.Sleep(time.Second * 20)
+			//	glog.V(0).Infoln("kill grpc server !!!!!!!!!!!!!!!!!")
+			//	grpcS.Stop()
+			//}()
+
+			grpcErr := grpcS.Serve(grpcL)
+			if grpcErr != nil {
+				glog.V(0).Infoln("grpc failed with ", grpcErr.Error())
+			}
+
+			//time.Sleep(time.Second * 5)
+		}
+	}()
 
 	httpS := &http.Server{Handler: defaultMux}
 	if runtime.GOOS != "windows" {
