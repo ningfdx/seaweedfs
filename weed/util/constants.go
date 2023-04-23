@@ -9,7 +9,7 @@ var (
 	VERSION        = sizeLimit + " " + VERSION_NUMBER
 	COMMIT         = ""
 
-	VERSIONMore = sizeLimit + " " + VERSION_NUMBER + " " + BuiltCommit + " quota, built: " + BuiltTime + ", " + BuiltType
+	VERSIONMore = sizeLimit + " " + VERSION_NUMBER + " " + BuiltCommit + " quota-nosub, built: " + BuiltTime + ", " + BuiltType
 	BuiltTime   string
 	BuiltCommit string
 
