@@ -42,6 +42,11 @@ func doEnsureVisited(mc *MetaCache, client filer_pb.FilerClient, path util.FullP
 
 	glog.V(4).Infof("ReadDirAllEntries %s ...", path)
 
+	deleteErr := mc.DeleteFolderChildren(context.Background(), path)
+	if deleteErr != nil {
+		glog.V(4).Infof("mc.DeleteFolderChildren %s failed %s...", path, deleteErr.Error())
+	}
+
 	err := util.Retry("ReadDirAllEntries", func() error {
 		return filer_pb.ReadDirAllEntries(client, path, "", func(pbEntry *filer_pb.Entry, isLast bool) error {
 			entry := filer.FromPbEntry(string(path), pbEntry)
