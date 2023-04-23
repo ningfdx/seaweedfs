@@ -22,6 +22,7 @@ const (
 
 func (fs *FilerServer) SubscribeMetadata(req *filer_pb.SubscribeMetadataRequest, stream filer_pb.SeaweedFiler_SubscribeMetadataServer) error {
 
+	return nil
 	peerAddress := findClientAddress(stream.Context(), 0)
 
 	alreadyKnown, clientName := fs.addClient(req.ClientName, peerAddress, req.ClientId, req.ClientEpoch)
@@ -88,6 +89,7 @@ func (fs *FilerServer) SubscribeMetadata(req *filer_pb.SubscribeMetadataRequest,
 
 func (fs *FilerServer) SubscribeLocalMetadata(req *filer_pb.SubscribeMetadataRequest, stream filer_pb.SeaweedFiler_SubscribeLocalMetadataServer) error {
 
+	return nil
 	peerAddress := findClientAddress(stream.Context(), 0)
 
 	// use negative client id to differentiate from addClient()/deleteClient() used in SubscribeMetadata()
