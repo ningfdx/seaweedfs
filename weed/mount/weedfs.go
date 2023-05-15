@@ -107,7 +107,7 @@ func NewSeaweedFileSystem(option *Option) *WFS {
 		concurrentLimit = 2
 	}
 	opLimit := int(20 + concurrentLimit*10)
-	acturalLimit := int(142 + (concurrentLimit * 10))
+	acturalLimit := int(200 + (concurrentLimit * 10))
 	wfs := &WFS{
 		RawFileSystem:     fuse.NewDefaultRawFileSystem(),
 		option:            option,

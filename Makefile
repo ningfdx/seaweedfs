@@ -23,4 +23,4 @@ build:
 	docker run --rm -w /code/ -v /tmp/go_mod:/root/go/pkg/mod -v /home/nfd/nfd/poyehali/seaweedfs/:/code ningfd/golang:1.9-ubuntu20.04 sh -c "make do_build"
 
 do_build:
-	cd weed; go build -o weed -ldflags ${ldflags} .
+	cd weed; export GOPROXY=https://goproxy.cn && go build -o weed -ldflags ${ldflags} .
