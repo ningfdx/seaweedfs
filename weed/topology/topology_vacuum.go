@@ -216,11 +216,11 @@ func (t *Topology) batchVacuumVolumeCleanup(grpcDialOption grpc.DialOption, vl *
 func (t *Topology) Vacuum(grpcDialOption grpc.DialOption, garbageThreshold float64, volumeId uint32, collection string, preallocate int64) {
 
 	// if there is vacuum going on, return immediately
-	swapped := atomic.CompareAndSwapInt64(&t.vacuumLockCounter, 0, 1)
-	if !swapped {
-		return
-	}
-	defer atomic.StoreInt64(&t.vacuumLockCounter, 0)
+	//swapped := atomic.CompareAndSwapInt64(&t.vacuumLockCounter, 0, 1)
+	//if !swapped {
+	//	return
+	//}
+	//defer atomic.StoreInt64(&t.vacuumLockCounter, 0)
 
 	// now only one vacuum process going on
 
@@ -243,7 +243,9 @@ func (t *Topology) Vacuum(grpcDialOption grpc.DialOption, garbageThreshold float
 						t.vacuumOneVolumeId(grpcDialOption, volumeLayout, c, garbageThreshold, locationList, vid, preallocate)
 					}
 				} else {
-					t.vacuumOneVolumeLayout(grpcDialOption, volumeLayout, c, garbageThreshold, preallocate)
+					glog.V(1).Infof("invalid volume number")
+					return
+					//t.vacuumOneVolumeLayout(grpcDialOption, volumeLayout, c, garbageThreshold, preallocate)
 				}
 			}
 		}
