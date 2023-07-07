@@ -156,7 +156,7 @@ func (v *Volume) doWriteRequest(n *needle.Needle, checkCookie bool) (offset uint
 
 	// append to dat file
 	n.UpdateAppendAtNs(v.lastAppendAtNs)
-	offset, size, _, err = n.Append(v.DataBackend, v.Version())
+	offset, size, _, err = n.Append(v.DataBackend, v.Version(), false)
 	v.checkReadWriteError(err)
 	if err != nil {
 		return
@@ -217,7 +217,7 @@ func (v *Volume) doDeleteRequest(n *needle.Needle) (Size, error) {
 		if !v.hasRemoteFile {
 			n.Data = nil
 			n.UpdateAppendAtNs(v.lastAppendAtNs)
-			offset, _, _, err = n.Append(v.DataBackend, v.Version())
+			offset, _, _, err = n.Append(v.DataBackend, v.Version(), true)
 			v.checkReadWriteError(err)
 			if err != nil {
 				return size, err

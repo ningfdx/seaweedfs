@@ -112,7 +112,7 @@ func (n *Needle) prepareWriteBuffer(version Version, writeBytes *bytes.Buffer) (
 	return 0, 0, fmt.Errorf("Unsupported Version! (%d)", version)
 }
 
-func (n *Needle) Append(w backend.BackendStorageFile, version Version) (offset uint64, size Size, actualSize int64, err error) {
+func (n *Needle) Append(w backend.BackendStorageFile, version Version, ignoreSizeCheck bool) (offset uint64, size Size, actualSize int64, err error) {
 
 	if end, _, e := w.GetStat(); e == nil {
 		defer func(w backend.BackendStorageFile, off int64) {
@@ -127,9 +127,11 @@ func (n *Needle) Append(w backend.BackendStorageFile, version Version) (offset u
 		err = fmt.Errorf("Cannot Read Current Volume Position: %v", e)
 		return
 	}
-	if offset >= MaxPossibleVolumeSize && n.Size.IsValid() {
-		err = fmt.Errorf("Volume Size %d Exceeded %d", offset, MaxPossibleVolumeSize)
-		return
+	if !ignoreSizeCheck {
+		if offset >= MaxPossibleVolumeSize && n.Size.IsValid() {
+			err = fmt.Errorf("Volume Size %d Exceeded %d", offset, MaxPossibleVolumeSize)
+			return
+		}
 	}
 
 	bytesBuffer := bufPool.Get().(*bytes.Buffer)

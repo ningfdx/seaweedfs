@@ -63,7 +63,7 @@ func (scanner *VolumeFileScanner4SeeDat) VisitNeedle(n *needle.Needle, offset in
 	}
 	scanner.hashes[checksum] = true
 
-	_, s, _, e := n.Append(scanner.datBackend, scanner.version)
+	_, s, _, e := n.Append(scanner.datBackend, scanner.version, false)
 	fmt.Printf("size %d error %v\n", s, e)
 
 	return nil
