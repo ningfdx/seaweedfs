@@ -177,14 +177,14 @@ func (v *Volume) doWriteRequest(n *needle.Needle, checkCookie bool) (offset uint
 
 func (v *Volume) syncDelete(n *needle.Needle) (Size, error) {
 	// glog.V(4).Infof("delete needle %s", needle.NewFileIdFromNeedle(v.Id, n).String())
-	actualSize := needle.GetActualSize(0, v.Version())
+	//actualSize := needle.GetActualSize(0, v.Version())
 	v.dataFileAccessLock.Lock()
 	defer v.dataFileAccessLock.Unlock()
 
-	if MaxPossibleVolumeSize < v.nm.ContentSize()+uint64(actualSize) {
-		err := fmt.Errorf("volume size limit %d exceeded! current size is %d", MaxPossibleVolumeSize, v.nm.ContentSize())
-		return 0, err
-	}
+	//if MaxPossibleVolumeSize < v.nm.ContentSize()+uint64(actualSize) {
+	//	err := fmt.Errorf("volume size limit %d exceeded! current size is %d", MaxPossibleVolumeSize, v.nm.ContentSize())
+	//	return 0, err
+	//}
 
 	return v.doDeleteRequest(n)
 }
