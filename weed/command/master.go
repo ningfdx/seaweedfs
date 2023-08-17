@@ -9,6 +9,7 @@ import (
 	"time"
 
 	hashicorpRaft "github.com/hashicorp/raft"
+	_ "net/http/pprof"
 
 	"golang.org/x/exp/slices"
 
@@ -105,6 +106,7 @@ func runMaster(cmd *Command, args []string) bool {
 	util.LoadConfiguration("security", false)
 	util.LoadConfiguration("master", false)
 
+	go http.ListenAndServe(fmt.Sprintf(":6060"), nil)
 	grace.SetupProfiling(*masterCpuProfile, *masterMemProfile)
 
 	parent, _ := util.FullPath(*m.metaFolder).DirAndName()
