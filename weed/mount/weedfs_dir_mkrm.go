@@ -107,6 +107,7 @@ func (wfs *WFS) Rmdir(cancel <-chan struct{}, header *fuse.InHeader, name string
 		return
 	}
 	entryFullPath := dirFullPath.Child(name)
+	wfs.logfile.WriteString(fmt.Sprintf("%s: remove directory: %v\n", time.Now().Format("2006/01/02 15:04"), entryFullPath))
 
 	glog.V(3).Infof("remove directory: %v", entryFullPath)
 	ignoreRecursiveErr := true // ignore recursion error since the OS should manage it
