@@ -9,6 +9,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -99,6 +101,9 @@ type WFS struct {
 
 	writingPathMapMutex sync.Mutex
 	writingPathMap      map[string]uint64
+
+	hostname string
+	logfile  *os.File
 }
 
 func NewSeaweedFileSystem(option *Option) *WFS {
@@ -124,6 +129,34 @@ func NewSeaweedFileSystem(option *Option) *WFS {
 		rootPathQuotaMap: make(map[string]filer.QuotaInfo),
 		writingPathMap:   make(map[string]uint64),
 	}
+	var err error
+	if wfs.hostname, err = os.Hostname(); err != nil {
+		wfs.hostname = "unknown"
+	}
+	dellogs := make([]string, 0)
+	var lastlogfile = ""
+	lastlogtime := time.Now().Format("2006-01-02")
+	logfiles, _ := os.ReadDir("/cache/")
+	for _, logfile := range logfiles {
+		if !strings.HasSuffix(logfile.Name(), "delete.log") {
+			continue
+		}
+		re := regexp.MustCompile(`\d{4}-\d{2}-\d{2}`)
+		matches := re.FindAllString(logfile.Name(), -1)
+		if len(matches) == 0 {
+			continue
+		}
+		dellogs = append(dellogs, matches[0])
+		if strings.Compare(lastlogtime, matches[0]) == 1 {
+			lastlogtime = matches[0]
+			lastlogfile = logfile.Name()
+		}
+	}
+	if len(dellogs) > 7 && strings.HasSuffix(lastlogfile, "delete.log") {
+		os.Remove(fmt.Sprintf("/cache/%s", lastlogfile))
+	}
+	logName := fmt.Sprintf("/cache/%s-%s-delete.log", wfs.hostname, time.Now().Format("2006-01-02"))
+	wfs.logfile, _ = os.OpenFile(logName, os.O_CREATE|os.O_APPEND|os.O_RDWR, os.ModePerm)
 
 	wfs.option.filerIndex = int32(rand.Intn(len(option.FilerAddresses)))
 	wfs.option.setupUniqueCacheDirectory()
